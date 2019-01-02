@@ -1,6 +1,6 @@
 PROJECT_ROOT = "./"
 
-CDN_URL = ""
+CDN_URL = "https://statics.madliar.com"
 LOG_PATH = "./log"
 
 

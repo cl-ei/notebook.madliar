@@ -8,6 +8,4 @@ user_url_map = (
     ("get", "/notebook/{key}", shared_page),
 )
 
-static_url_map = (
-    ("/static", "../madliar.com/static"),
-)
+static_url_map = ()
