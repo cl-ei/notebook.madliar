@@ -20,7 +20,7 @@
 <script type="text/javascript" src="{{ CDN_URL }}/static/js/jquery.min.js"></script>
 <script type="text/javascript" src="{{ CDN_URL }}/static/js/marked.js"></script>
 {% if need_trans %}
-<script>$(function(){var articleDom = $("#article-detail");articleDom.html(marked(articleDom.html()));});</script>
+<script>$(function(){var articleDom = $("#article-detail");articleDom.html(marked(articleDom.text()));});</script>
 {% endif %}
 </body>
 </html>
