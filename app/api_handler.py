@@ -6,9 +6,9 @@ import shutil
 
 from app.http import HttpResponse
 from model import dao
-from etc.config import APP_NOTE_BOOK_CONFIG
+from etc.config import APP_USERS_FOLDER_PATH
 
-app_notebook_path = APP_NOTE_BOOK_CONFIG.get("user_root_foler")
+app_notebook_path = APP_USERS_FOLDER_PATH
 
 
 def json_to_response(data):
