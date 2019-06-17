@@ -2,32 +2,28 @@ import configparser
 
 print("-"*80)
 
-try:
-    config = configparser.ConfigParser()
-    config.read('/etc/madliar.settings.ini')
-except Exception as e:
-    print(f"\nCannot load system configure file: {e}.\n")
-    config = {}
+config = configparser.ConfigParser()
+config.read('/etc/madliar.settings.ini')
 
 
 try:
     CDN_URL = config["default"]["CDN_URL"]
-except:
+except KeyError:
     CDN_URL = "https://statics.madliar.com"
 
 try:
     PROJECT_ROOT = config["notebook"]["PROJECT_ROOT"]
-except:
+except KeyError:
     PROJECT_ROOT = "./"
 
 try:
     LOG_PATH = config["notebook"]["LOG_PATH"]
-except:
+except KeyError:
     LOG_PATH = "./log"
 
 try:
     APP_USERS_FOLDER_PATH = config["notebook"]["APP_USERS_FOLDER_PATH"]
-except:
+except KeyError:
     APP_USERS_FOLDER_PATH = "./notebook_user"
 
 
@@ -37,7 +33,7 @@ try:
     REDIS_CONFIG["port"] = int(config["redis"]["port"])
     REDIS_CONFIG["password"] = config["redis"]["password"]
     REDIS_CONFIG["db"] = int(config["redis"]["notebook_db"])
-except:
+except KeyError:
     REDIS_CONFIG["host"] = "47.104.176.84"
     REDIS_CONFIG["port"] = 19941
     REDIS_CONFIG["password"] = ""
