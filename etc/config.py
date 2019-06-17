@@ -32,14 +32,14 @@ except:
 REDIS_CONFIG = {}
 try:
     REDIS_CONFIG["host"] = config["redis"]["host"]
-    REDIS_CONFIG["port"] = config["redis"]["host"]
-    REDIS_CONFIG["password"] = config["redis"]["host"]
+    REDIS_CONFIG["port"] = int(config["redis"]["port"])
+    REDIS_CONFIG["password"] = config["redis"]["password"]
+    REDIS_CONFIG["db"] = int(config["redis"]["notebook_db"])
 except:
     REDIS_CONFIG["host"] = "47.104.176.84"
     REDIS_CONFIG["port"] = 19941
     REDIS_CONFIG["password"] = ""
-
-REDIS_CONFIG["db"] = 8
+    REDIS_CONFIG["db"] = 8
 
 
 print(
