@@ -50,5 +50,5 @@ print(
     f"LOG_PATH: {LOG_PATH}\n"
     f"APP_USERS_FOLDER_PATH: {APP_USERS_FOLDER_PATH}\n"
     f"REDIS_CONFIG: {REDIS_CONFIG}\n"
-    "-"*80 + "\n"
+    f"{'-'*80}\n"
 )
