@@ -1,10 +1,12 @@
 import configparser
 
+print("-"*80)
+
 try:
     config = configparser.ConfigParser()
     config.read('/etc/madliar.settings.ini')
 except Exception as e:
-    print("-"*80 + f"\nCannot load system configure file: {e}.\n")
+    print(f"\nCannot load system configure file: {e}.\n")
     config = {}
 
 
