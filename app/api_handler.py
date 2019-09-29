@@ -542,6 +542,7 @@ def openfile(request):
             response_data = {
                 "err_code": 0,
                 "key": data,
+                "bin": True,
                 "path": original_path
             }
         else:
