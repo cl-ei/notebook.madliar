@@ -539,7 +539,11 @@ def openfile(request):
     if get_file_type(ex_name) == "img":
         result, data = dao.share_file(full_path)
         if result:
-            response_data = {"err_code": 0, "key": data}
+            response_data = {
+                "err_code": 0,
+                "key": data,
+                "path": original_path
+            }
         else:
             response_data = {"err_code": 403, "err_msg": "打开失败！"}
         return json_to_response(response_data)
