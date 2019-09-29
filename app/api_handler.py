@@ -534,6 +534,16 @@ def openfile(request):
             "err_code": 403,
             "err_msg": "内容不存在。"
         })
+
+    ex_name = full_path.strip().split(".")[-1]
+    if get_file_type(ex_name) == "img":
+        result, data = dao.share_file(full_path)
+        if result:
+            response_data = {"err_code": 0, "key": data}
+        else:
+            response_data = {"err_code": 403, "err_msg": "打开失败！"}
+        return json_to_response(response_data)
+
     if os.path.getsize(full_path) > 512000:
         return json_to_response({
             "err_code": 403,
