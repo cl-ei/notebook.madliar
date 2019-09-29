@@ -139,6 +139,8 @@ def get_file_type(ex_name):
         return "text"
     elif ex_name.lower() in "md markdown":
         return "md"
+    elif ex_name.lower() in ("png", "jpg", "jpeg", "gif", "bmp"):
+        return "img"
     else:
         return "bin"
 
