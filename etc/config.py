@@ -6,10 +6,8 @@ config = configparser.ConfigParser()
 config.read('/etc/madliar.settings.ini')
 
 
-try:
-    CDN_URL = config["default"]["CDN_URL"]
-except KeyError:
-    CDN_URL = "https://statics.madliar.com"
+CDN_URL = ""  # config["default"]["CDN_URL"]
+
 
 try:
     PROJECT_ROOT = config["notebook"]["PROJECT_ROOT"]
