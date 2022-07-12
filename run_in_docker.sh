@@ -8,5 +8,5 @@ docker rm ${DOCKER_NAME} 2> /dev/null
 docker run -itd --rm \
   --name ${DOCKER_NAME} \
   --net=host \
-  -v /data/nvme/notebook_user:/data/notebook_user
+  -v /data/nvme/notebook_user:/data/notebook_user \
   ${DOCKER_IMAGE}
