@@ -1,42 +1,20 @@
-import configparser
-
+import os
 print("-"*80)
 
-config = configparser.ConfigParser()
-config.read('/etc/madliar.settings.ini')
-
-
 CDN_URL = ""  # config["default"]["CDN_URL"]
+PROJECT_ROOT = "./"
 
+LOG_PATH = "/var/notebook/log"
+os.makedirs(LOG_PATH, exist_ok=True)
 
-try:
-    PROJECT_ROOT = config["notebook"]["PROJECT_ROOT"]
-except KeyError:
-    PROJECT_ROOT = "./"
+APP_USERS_FOLDER_PATH = "/data/notebook_user"
 
-try:
-    LOG_PATH = config["notebook"]["LOG_PATH"]
-except KeyError:
-    LOG_PATH = "./log"
-
-try:
-    APP_USERS_FOLDER_PATH = config["notebook"]["APP_USERS_FOLDER_PATH"]
-except KeyError:
-    APP_USERS_FOLDER_PATH = "./notebook_user"
-
-
-REDIS_CONFIG = {}
-try:
-    REDIS_CONFIG["host"] = config["redis"]["host"]
-    REDIS_CONFIG["port"] = int(config["redis"]["port"])
-    REDIS_CONFIG["password"] = config["redis"]["password"]
-    REDIS_CONFIG["db"] = int(config["redis"]["notebook_db"])
-except KeyError:
-    REDIS_CONFIG["host"] = "47.104.176.84"
-    REDIS_CONFIG["port"] = 19941
-    REDIS_CONFIG["password"] = ""
-    REDIS_CONFIG["db"] = 8
-
+REDIS_CONFIG = {
+    "host": "127.0.0.1",
+    "port":  6379,
+    "password": "redis",
+    "db": 8,
+}
 
 print(
     "\n"

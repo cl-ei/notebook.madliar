@@ -15,7 +15,7 @@ for prefix, path in static_url_map:
 sys_args = sys.argv
 if len(sys_args) < 3:
     host = "localhost"
-    port = 8083
+    port = 10091
 else:
     _, host, port = sys_args
 
