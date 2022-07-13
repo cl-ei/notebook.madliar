@@ -1,0 +1,110 @@
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+    <title>小坏蛋</title>
+    <meta name="HandheldFriendly" content="True" />
+    <meta name="MobileOptimized" content="360" />
+    <style>
+        .table1 table {
+            width:100%;
+            margin:15px 0
+        }
+        .table1 th {
+            background-color:#93DAFF;
+            color:#000000
+        }
+        .table1 td:nth-child(1), th:nth-child(1) {
+            width: 2em;
+        }
+        .table1 td:nth-child(2), th:nth-child(2) {
+            width: 200px;
+        }
+        .table1 td:nth-child(3), th:nth-child(3) {
+            width: 200px;
+        }
+        .table1 td:nth-child(4), th:nth-child(4) {
+            width: 100px;
+        }
+
+        .table1, .table1 th,.table1 td
+        {
+            font-size:0.95em;
+            text-align:center;
+            padding:4px;
+            border:1px solid #dddddd;
+            border-collapse:collapse
+        }
+    </style>
+</head>
+<body style="margin: 0;padding: 20px;width: 500px;">
+<div id="main-box" style="background: red">
+    <table class="table1">
+        <tr>
+            <th>#</th>
+            <th>歌名</th>
+            <th>用户</th>
+            <th>操作</th>
+        </tr>
+        <tr>
+            <td>1</td>
+            <td>这是消息</td>
+            <td>gadsa</td>
+            <td><a>删除</a></td>
+        </tr>
+        <tr>
+            <td>1</td>
+            <td>3</td>
+            <td>gadsa</td>
+            <td><a>删除</a></td>
+        </tr>
+        <tr>
+            <td>1</td>
+            <td>3</td>
+            <td>gadsa</td>
+            <td><a>删除</a></td>
+        </tr>
+
+    </table>
+</div>
+<script src="//src.madliar.com/static/js/reconnectwebsocket.min.js"></script>
+<script src="//src.madliar.com/static/js/jquery.min.js"></script>
+<script src="//src.madliar.com/static/js/bootstrap.min.js"></script>
+<script>
+$(function(){
+    function renderSonglist(sl){
+        console.log(sl);
+    }
+
+    var t1 = 0;
+    var socketStatus = false;
+    var ws = new ReconnectingWebSocket("wss://www.madliar.com/wss");
+    ws.onopen = function (evnt) {
+        socketStatus = true;
+        clearInterval(t1);//去掉定时器
+        t1 = setInterval(function(){ws.send("heartbeat")}, 10000);
+        console.log("Websocket connected! t1: ", t1);
+        ws.send("songlist");
+    };
+    ws.onmessage = function (evnt) {
+        var msg = evnt.data;
+        if (msg == "OK"){return}
+        try{
+            d = JSON.parse(msg)
+        }catch(e){
+            console.log("e: ", e)
+            return;
+        }
+        if(d.action == "songlist"){
+            renderSonglist(d.data);
+        }
+    };
+    ws.onerror = function (evnt) {
+        socketStatus=false;
+    };
+    ws.onclose = function (evnt) {
+        socketStatus=false;
+    };
+})
+</script>
+</body>
+</html>
