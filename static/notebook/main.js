@@ -1,11 +1,11 @@
 $.cl = {
     jstreeTypes: {
-        bin: {icon: (window.CDN_URL || "") + "/static/img/jstree/bin.png"},
-        img: {icon: (window.CDN_URL || "") + "/static/img/jstree/img.png"},
-        text: {icon: (window.CDN_URL || "") + "/static/img/jstree/file.png"},
-        md: {icon: (window.CDN_URL || "") + "/static/img/jstree/file.png"},
-        folder: {icon: (window.CDN_URL || "") + "/static/img/jstree/folder.png"},
-        default: {icon: (window.CDN_URL || "") + "/static/img/jstree/folder.png"}
+        bin: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/bin.png"},
+        img: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/img.png"},
+        text: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/file.png"},
+        md: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/file.png"},
+        folder: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/folder.png"},
+        default: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/folder.png"}
     },
     setCookie: function (key, value, expiredays){
         var exdate=new Date();
