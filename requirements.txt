@@ -1,6 +1,12 @@
 rsa
-aiohttp
-jinja2
+aiohttp~=3.8.4
+jinja2~=3.1.2
 requests
-aioredis
+aioredis~=1.3.1
 redis
+pydantic~=1.10.7
+fastapi~=0.95.0
+starlette~=0.26.1
+uvicorn~=0.20.0
+cryptography~=39.0.2
+python-multipart~=0.0.6
