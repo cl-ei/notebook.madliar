@@ -191,7 +191,11 @@ $.cl = {
         }
     },
     setCurrentDoc: function (option) {
-        localStorage.docPath = option.path;
+        // 如果设置其他两项，则 path 保持
+        // 如果设置 path 而未指定 ver 和 content, 则清空后两者
+        if (option.path !== undefined) {
+            localStorage.docPath = option.path;
+        }
         localStorage.docVer = option.version || "";
         $.cl.docContent = option.content || "";
     },
@@ -697,6 +701,7 @@ $.cl = {
                     return ;
                 }
                 $.cl.popupMessage("保存成功！", null, 2)
+                $.cl.setCurrentDoc({version: data.version, content: content})
             });
             return ;
         }

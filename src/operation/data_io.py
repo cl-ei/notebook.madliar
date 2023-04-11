@@ -1,3 +1,6 @@
+import datetime
+import json
+import logging
 import os
 import shutil
 from pydantic import BaseModel
@@ -23,6 +26,12 @@ class DiffItem(BaseModel):
     added: bool = False
     removed: bool = False
     value: str = ""
+
+
+class VersionFile(BaseModel):
+    base: int
+    diff: List[DiffItem] = []
+    create_time: str
 
 
 class FileLike(BaseModel):
@@ -96,17 +105,77 @@ async def rename(email: str, old_path: str, new_name: str):
     os.rename(dist, new_path)
 
 
-async def _get_file_by_version_file(version_file: str) -> Tuple[str, str]:
+async def _get_file_by_version_file(meta_path: str, version: Union[str, int]) -> str:
     """
     通过 version file 还原 全量文件
 
     Returns
     -------
     content: str 全量内容
-    version: str 版本号
     """
-    # TODO: 从版本文件里找到base，并根据 delta 还原原文本
-    raise ErrorWithPrompt("未实现")
+    try:
+        with open(os.path.join(meta_path, f"v{version}"), "rb") as f:
+            ver_content = f.read()
+    except FileNotFoundError:
+        raise ErrorWithPrompt("文件版本不存在")
+
+    version = VersionFile(**json.loads(ver_content))
+    try:
+        with open(os.path.join(meta_path, f"b{version.base}"), "rb") as f:
+            bin_content = f.read()
+        content = bin_content.decode("utf-8")
+    except FileNotFoundError:
+        raise ErrorWithPrompt("该版本源文件已不存在")
+    except UnicodeDecodeError:
+        raise ErrorWithPrompt("文件编码错误，请使用utf-8编码")
+
+    # 如果 version 里没有 diff, 则直接返回 base
+    if not version.diff:
+        return content
+
+    result = []
+    proc_index = 0
+    for d in version.diff:
+        if d.added is True:
+            result.append(d.value)
+            proc_index += d.count
+        elif d.removed is True:
+            proc_index += d.count
+        else:
+            result.append(content[proc_index: proc_index + d.count])
+            proc_index += d.count
+    return "".join(result)
+
+
+async def _get_last_vb_of_file(file) -> Tuple[Optional[int], Optional[int]]:
+    """
+    当 version 或者 base file 不存在时，返回 None
+
+    Returns
+    -------
+    version: int
+    base: int
+    """
+    meta_path = f"{file}.meta"
+    try:
+        last_version = -1
+        last_base = -1
+        for filename in os.listdir(meta_path):
+            if os.path.isfile(os.path.join(meta_path, filename)):
+                if filename.startswith("v"):
+                    this_version = int(filename[1:])
+                    if this_version > last_version:
+                        last_version = this_version
+                elif filename.startswith("b"):
+                    this_base = int(filename[1:])
+                    if this_base > last_base:
+                        last_base = this_base
+
+        version = last_version if last_version >= 0 else None
+        base = last_base if last_base > 0 else None
+        return version, base
+    except FileNotFoundError:
+        return None, None
 
 
 async def openfile(email: str, file: str, version: str) -> Tuple[str, str]:
@@ -129,30 +198,21 @@ async def openfile(email: str, file: str, version: str) -> Tuple[str, str]:
     dist = os.path.join(storage_root, email, file.lstrip("/"))
     if not os.path.exists(dist) or not os.path.isfile(dist):
         raise ErrorWithPrompt("文件不存在")
-    if os.stat(dist).st_size > 1024*1024*5:
-        raise ErrorWithPrompt("文件过大，最大支持5MB")
 
     meta_path = f"{dist}.meta"
     if version:
-        return await _get_file_by_version_file(os.path.join(meta_path, f"v{version}"))
+        content = await _get_file_by_version_file(meta_path, version)
+        return content, version
     else:
         # 没有指定版本，获取最新版本
-        try:
-            last_version = 0
-            for filename in os.listdir(meta_path):
-                if filename.startswith("v") and os.path.isfile(os.path.join(meta_path, filename)):
-                    this_version = int(filename[1:])
-                    if this_version > last_version:
-                        last_version = this_version
-            if last_version == 0:
-                raise FileNotFoundError()
+        last_version, _ = await _get_last_vb_of_file(dist)
+        logging.debug(f"not specified version, load last ver: {last_version}")
+        if last_version is not None:
+            content = await _get_file_by_version_file(meta_path, last_version)
+            return content, f"{last_version}"
 
-            return await _get_file_by_version_file(os.path.join(meta_path, f"v{last_version}"))
-        except FileNotFoundError:
-            # 没有meta，返回原生文件
-            pass
-
-    # 返回原生文件，版本号为空
+    # 版本号为空, 返回原生文件
+    # 上传的文件没有版本，会走到这里；用户上传的文件同时没有版本号的，一定是空文件
     with open(dist, "rb") as f:
         bin_data = f.read()
     try:
@@ -166,12 +226,14 @@ async def savefile(email: str, file: str, content: Union[str, bytes], create=Fal
     """
     全量保存文件
 
-    1. 如果为二进制文件，直接保存，version 返回 ""
+    1. 如果为二进制文件，直接保存，version 返回 ""(ignore, 二进制文件不能保存，只能通过 upload 接口覆盖)
     2. 文本类文件，寻找最新version和base，创建base，并根据该base创建version
 
     Returns
     -------
     version: str 版本号
+
+    # TODO: add lock
     """
     dist = os.path.join(storage_root, email, file.lstrip("/"))
     if not os.path.exists(dist) or not os.path.isfile(dist):
@@ -188,11 +250,29 @@ async def savefile(email: str, file: str, content: Union[str, bytes], create=Fal
             raise ErrorWithPrompt("编码错误，请使用utf-8编码")
     else:
         bin_content = content
-    with open(dist, "wb") as f:
+
+    # 读取的逻辑已经处理，不需要写原文件，故进行注释
+    # with open(dist, "wb") as f:
+    #     f.write(bin_content)
+
+    # 创建版本
+    # 寻找最新版本
+    last_version, last_base = await _get_last_vb_of_file(dist)
+    target_version = 0 if last_version is None else last_version + 1
+    target_base = 0 if last_base is None else last_base + 1
+
+    # 创建base
+    meta_path = f"{dist}.meta"
+    os.makedirs(meta_path, exist_ok=True)
+    with open(os.path.join(meta_path, f"b{target_base}"), "wb") as f:
         f.write(bin_content)
 
-    # TODO: create version
-    return ""
+    # 创建version
+    version_data = VersionFile(base=target_base, create_time=f"{datetime.datetime.now()}")
+    with open(os.path.join(meta_path, f"v{target_version}"), "wb") as f:
+        f.write(version_data.json(ensure_ascii=False).encode("utf-8"))
+
+    return str(target_version)
 
 
 async def savefile_delta(email: str, file: str, based_version: str, base_md5: str, diff: List[DiffItem]) -> str:
