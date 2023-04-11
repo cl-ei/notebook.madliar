@@ -182,6 +182,20 @@ $.cl = {
         $("#input-modal").modal("show");
     },
 
+    docContent: "",
+    getCurrentDoc: function () {
+        return {
+            path: localStorage.docPath === undefined ? "" : localStorage.docPath,
+            version: localStorage.docVer === undefined ? "" : localStorage.docVer,
+            content: $.cl.docContent,
+        }
+    },
+    setCurrentDoc: function (option) {
+        localStorage.docPath = option.path;
+        localStorage.docVer = option.version || "";
+        $.cl.docContent = option.content || "";
+    },
+
     openJstreeNode: function (nodeId){
         let layers = [];
         if(nodeId !== "/"){
@@ -262,8 +276,8 @@ $.cl = {
                     $.cl.popupMessage("删除成功！", null, 3);
                     let refreshNode = nodeId.split("/").slice(0, -1).join("/") || "/";
                     $("#jstree").jstree().refresh_node(refreshNode);
-                    if(nodeId === localStorage.currentDocument){
-                        localStorage.removeItem("currentDocument");
+                    if(nodeId === $.cl.getCurrentDoc().path){
+                        $.cl.setCurrentDoc({"path": ""})
                         $.cl.renderCurrentEditDocumentTitle();
                     }
                 }else{
@@ -294,8 +308,8 @@ $.cl = {
                     $.cl.popupMessage("重命名成功！", null, 3);
                     var nodePath = nodeId.split("/").slice(0, -1).join("/") || "/";
                     $("#jstree").jstree().refresh_node(nodePath);
-                    if (nodeId === localStorage.currentDocument){
-                        localStorage.currentDocument = nodePath + "/" + dirName;
+                    if (nodeId === $.cl.getCurrentDoc().path){
+                        $.cl.setCurrentDoc({path: nodePath + "/" + dirName})
                         $.cl.renderCurrentEditDocumentTitle();
                     }
                 }else{
@@ -346,11 +360,12 @@ $.cl = {
         $("#input-modal").modal("show");
     },
     renderCurrentEditDocumentTitle: function (){
-        if(localStorage.currentDocument){
+        let curDoc = $.cl.getCurrentDoc();
+        if(curDoc.path !== undefined && curDoc.path.length > 0){
             var jstreeInstence = $("#jstree").jstree();
             jstreeInstence.deselect_all();
-            jstreeInstence.select_node(localStorage.currentDocument);
-            $("#input-text-area").prev().html("编辑 - " + localStorage.currentDocument);
+            jstreeInstence.select_node(curDoc.path);
+            $("#input-text-area").prev().html("编辑 - " + curDoc.path);
         }else{
             $("#input-text-area").prev().html("编辑");
             document.getElementById('input-text-area').value = "";
@@ -368,6 +383,7 @@ $.cl = {
                 $.cl.popupConfirm("仅允许包含数字、字母、下划线以及汉字，不支持其它字符。请返回修改。", null, false, "名称有误");
                 return false;
             }
+
             var onSaveContentResponsed = function (data){
                 if(data.code === 0){
                     $.cl.popupMessage("保存成功！", null, 3);
@@ -375,7 +391,7 @@ $.cl = {
                 }else{
                     $.cl.popupMessage("保存失败：" + data.msg);
                 }
-                localStorage.currentDocument = nodeId + "/" + fileName;
+                $.cl.setCurrentDoc({path: nodeId + "/" + fileName});
                 $.cl.renderCurrentEditDocumentTitle();
             };
             $.cl.sendRequest({action: "save", node_id: nodeId + "/" + fileName, content: encodeURIComponent(content)}, onSaveContentResponsed);
@@ -406,18 +422,22 @@ $.cl = {
                 $.cl.popupMessage(msg);
                 return ;
             }
-            localStorage.currentDocument = data.path;
+
+            $.cl.setCurrentDoc({path: data.path, version: data.version, content: data.content});
             $.cl.renderCurrentEditDocumentTitle();
-            if (data.bin === true){
-                var new_url = window.location.protocol + "//" + window.location.host + "/notebook/" + data.key;
-                document.getElementById('input-text-area').value = [
-                    "<img src=\"",
-                    new_url,
-                    "\" style=\"width:100%\">"
-                ].join("");
-            }else{
+
+            if (data.img !== true){
                 document.getElementById('input-text-area').value = data.content;
+                return;
             }
+
+            // 预览图片，渲染dom
+            var new_url = window.location.protocol + "//" + window.location.host + "/notebook/" + data.key;
+            document.getElementById('input-text-area').value = [
+                "<img src=\"",
+                new_url,
+                "\" style=\"width:100%\">"
+            ].join("");
         };
         var onOpenFileFailed = function (e){
             $.cl.onOpenFile = false;
@@ -545,14 +565,15 @@ $.cl = {
             jstreeInstance.jstree().destroy()
         }
         jstreeInstance.on("ready.jstree", function(){
-            if (localStorage.currentDocument){
-                $.cl.openJstreeNode(localStorage.currentDocument);
-                $.cl.openFile(localStorage.currentDocument);
+            let curDoc = $.cl.getCurrentDoc();
+            if (curDoc.path.length > 0){
+                $.cl.openJstreeNode(curDoc.path);
+                $.cl.openFile(curDoc.path);
             }
         }).on("select_node.jstree", function (e, node){
             if (["text", "md", "img"].indexOf(node.node.type) < 0) return;
             var selectedNodeId = node.node.id;
-            if (localStorage.currentDocument !== selectedNodeId){
+            if ($.cl.getCurrentDoc().path !== selectedNodeId){
                 $.cl.openFile(selectedNodeId);
             }
         }).jstree({
@@ -632,27 +653,54 @@ $.cl = {
             return ;
         }
 
-        var nodeType = $("#jstree").jstree().get_node(localStorage.currentDocument).type;
+        var nodeType = $("#jstree").jstree().get_node($.cl.getCurrentDoc().path).type;
         if (["md", "text"].indexOf(nodeType) < 0){
             return;
         }
 
         var content = $("#input-text-area").val();
         if (!content.trim(" \n\r\t")) return;
-        var onSaveResponsed = function (data){
-            if (data.code !== 0){
-                var msg = "操作失败。详细信息：" + data.msg;
-                $.cl.popupMessage(msg);
-                return ;
+
+        // 进入保存逻辑
+        let curDoc = $.cl.getCurrentDoc();
+
+        if (curDoc.path.length > 0){
+            let reqData = {action: "save", node_id: curDoc.path};
+            if (curDoc.version.length > 0 && curDoc.content.length > 0) {
+                // 如果有版本号，则计算原始文档的diff
+                reqData["range"] = "delta";
+                reqData["based_version"] = curDoc.version;
+
+                let rawDiff = Diff.diffChars(curDoc.content, content),
+                    postDiff = [];
+                for (let i = 0; i < rawDiff.length; i++) {
+                    let d = rawDiff[i];
+                    if (d.added === undefined && d.removed === undefined) {
+                        d.value = ""
+                    }
+                    postDiff.push(d)
+                }
+                reqData["diff"] = postDiff
+                reqData["base_md5"] = md5(curDoc.content);
+            } else {
+                // 没有版本号，全量保存
+                reqData["range"] = "all";
+                reqData["content"] = content;
             }
-            $.cl.popupMessage("保存成功！", null, 3)
-        };
-        if (localStorage.currentDocument){
+
             $.cl.clearMessage();
-            $.cl.sendRequest({action: "save", node_id: localStorage.currentDocument, content: content}, onSaveResponsed);
+            $.cl.sendRequest(reqData, function (data) {
+                // 保存成功后进入此
+                // TODO：也许需要重新处理 version
+                if (data.code !== 0){
+                    $.cl.popupMessage("操作失败。详细信息：" + data.msg);
+                    return ;
+                }
+                $.cl.popupMessage("保存成功！", null, 2)
+            });
             return ;
         }
-        /* show confirm */
+        /* show confirm
         console.log("confirm?")
         var path = "",
             topSelected = $("#jstree").jstree().get_top_selected(true);
@@ -662,6 +710,7 @@ $.cl = {
             path = topSelected[0].type === "folder" ? topSelected[0].id : topSelected[0].parent;
         }
         $.cl.showSaveContentDialog(path, content);
+        */
     },
     daemonToTransMdId: undefined,
     oldContent: undefined,
@@ -707,8 +756,10 @@ $.cl = {
                 if (data.code === 0){
                     $.cl.popupMessage("上传成功！", null, 3);
                     $("#jstree").jstree().refresh_node(path);
-                    let thisDoc = path === "/" ? ("/" + file.name) : (path + "/" + file.name)
-                    if (thisDoc === localStorage.currentDocument){
+                    let thisDoc = path === "/" ? ("/" + file.name) : (path + "/" + file.name),
+                        curDoc = $.cl.getCurrentDoc();
+
+                    if (thisDoc === curDoc.path){
                         $.cl.openFile(thisDoc);
                     }
                 }else{
@@ -812,12 +863,15 @@ $.cl = {
             keydown: function(event){
                 if(event.keyCode === 9){
                     if($("#input-text-area").is(":focus")){
+                        // 在编写代码时插入 \t
                         event.preventDefault();
-                        $.cl.insertStrToTextarea(
-                            (localStorage.currentDocument && localStorage.currentDocument.substr(-2).toLowerCase() === "py")
-                            ? "    "
-                            : "\t"
-                        )
+
+                        let thisDoc = $.cl.getCurrentDoc().path,
+                            insertChar = "    ";
+                        if (thisDoc.length > 0 && thisDoc.substring(thisDoc.length - 2).toLowerCase() === "py") {
+                            insertChar = "\t";
+                        }
+                        $.cl.insertStrToTextarea(insertChar);
                     }
                     return ;
                 }

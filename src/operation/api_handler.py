@@ -176,7 +176,40 @@ async def newfile(request: CustomRequest):
 
 @SupportedAction(action="open", login_required=True)
 async def openfile(request: CustomRequest):
+    """
+    打开文件和保存文件的逻辑
+
+    获取文件：
+        request args:
+            file（node_id）: 文件路径
+            version: numeric str, 版本号，可为空。为空时，返回最新版本号
+        response:
+            version: str 版本号，可为空。
+                - 为空，则为原始文件。
+                - 否则为某版本，从0开始，每个版本必关联一个 base: 原始文件，版本号是基于base的差异，版本之间无关联
+            content: 全量内容
+
+            img: bool 若为图片文件，则此 value 为 True
+
+    保存文件:
+        request args:
+            range: str, "all" 或 "delta", 全量或增量
+                - all: 此时直接保存 content 为新的 base，并为此 base 创建version
+                - delta: 此时需要增量保存，需要根据based version 还原出 base，验证 md5 是否正确，并将增量（diff）保存为新版本。
+                    若md5不正确，则返回 错误，改为全量保存
+
+                note: 没有version时，必须采用全量保存
+
+            content: Optional[str]
+
+            based_version: str
+            base_md5: str
+            diff: List
+        response:
+            version: str, 保存之后的版本号
+    """
     file = request.body.get("node_id")
+    version = request.body.get("version", "")
 
     # special logic: judge img
     path, inner = os.path.split(file)
@@ -192,10 +225,11 @@ async def openfile(request: CustomRequest):
                 "path": file
             }
 
-    content = await data_io.openfile(request.email, file)
+    content, version = await data_io.openfile(request.email, file, version)
     return {
         "code": 0,
         "content": content,
+        "version": version,
         "path": file,
     }
 
@@ -203,9 +237,21 @@ async def openfile(request: CustomRequest):
 @SupportedAction(action="save", login_required=True)
 async def save(request: CustomRequest):
     file = request.body.get("node_id")
-    content = request.body.get("content")
-    await data_io.savefile(request.email, file, content)
-    return {"code": 0}
+    save_range = request.body.get("range")
+    if save_range == "all":
+        content = request.body.get("content")
+        version = await data_io.savefile(request.email, file, content)
+
+    elif save_range == "delta":
+        based_version: str = request.body.get("based_version")
+        base_md5: str = request.body.get("base_md5")
+        diff = [data_io.DiffItem(**d) for d in request.body.get("diff")]
+        version = await data_io.savefile_delta(request.email, file, based_version, base_md5, diff)
+
+    else:
+        raise ErrorWithPrompt("不支持此保存方式")
+
+    return {"code": 0, "version": version}
 
 
 @SupportedAction(action="share", login_required=True)
