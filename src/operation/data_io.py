@@ -9,11 +9,12 @@ from src.error import ErrorWithPrompt
 
 storage_root = "./storage" if DEBUG else "/data/storage"
 """
-在文件同级目录，有 "{file_name}.meta"的文件夹，存储该文件的元信息
+隐藏文件:
+1. 在文件同级目录，有 "{file_name}.meta"的文件夹，存储该文件的元信息
 file:   - {storage_root}/{email}/user_root/readme.md
 meta:   - {storage_root}/{email}/user_root/readme.md.meta/
  * share.txt - 创建过的分享
-
+2. 每个用户下有 "/blog.meta" 的文件夹，存储 blog 的索引
 """
 
 

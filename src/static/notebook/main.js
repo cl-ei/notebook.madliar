@@ -182,22 +182,6 @@ $.cl = {
         $("#input-modal").modal("show");
     },
 
-    rm: function (nodeId){
-        var afterRmSucceed = function (data){
-            if(data.code === 0){
-                $.cl.popupMessage("删除成功！", null, 3);
-                let refreshNode = nodeId.split("/").slice(0, -1).join("/") || "/";
-                $("#jstree").jstree().refresh_node(refreshNode);
-                if(nodeId === localStorage.currentDocument){
-                    localStorage.removeItem("currentDocument");
-                    $.cl.renderCurrentEditDocumentTitle();
-                }
-            }else{
-                $.cl.popupMessage("删除失败：" + data.msg);
-            }
-        };
-        $.cl.sendRequest({action: "rm", node_id: nodeId}, afterRmSucceed)
-    },
     openJstreeNode: function (nodeId){
         let layers = [];
         if(nodeId !== "/"){
@@ -259,6 +243,41 @@ $.cl = {
         $("#input-modal-title").html("新建文件夹");
         $("#input-modal-body").html('<label>新的文件夹名称: <input class="redinput" type="text" name="folder-name"/></label>');
         $("input[name=folder-name]").keyup(function(e){if(e.keyCode === 13)$("#input-modal-confirm-btn").trigger("click");});
+        $("#input-modal").modal("show");
+    },
+    showDeleteConfirmDialog: function(nodeId){
+        $("#input-modal-confirm-btn").data("nodeId", nodeId).off("click").click(function(){
+            // 删除按钮按下之后
+            $("#input-modal").modal("hide");
+
+            let inputDelNode = $("input[name=del-obj-name]").val();
+            if (inputDelNode !== nodeId) {
+                $.cl.popupMessage("输入错误，删除取消。", "", 2);
+                return;
+            }
+
+            $.cl.sendRequest({action: "rm", node_id: nodeId}, function (data){
+                // 删除成功之后
+                if(data.code === 0){
+                    $.cl.popupMessage("删除成功！", null, 3);
+                    let refreshNode = nodeId.split("/").slice(0, -1).join("/") || "/";
+                    $("#jstree").jstree().refresh_node(refreshNode);
+                    if(nodeId === localStorage.currentDocument){
+                        localStorage.removeItem("currentDocument");
+                        $.cl.renderCurrentEditDocumentTitle();
+                    }
+                }else{
+                    $.cl.popupMessage("删除失败：" + data.msg);
+                }
+            })
+        });
+
+        $("#input-modal-title").html("删除");
+        $("#input-modal-body").html(
+            '删除之后不可恢复！<br/>如果您确定，请在下方输入"' + nodeId + '"</br></br>' +
+            '<label>删除: <input class="redinput" type="text" name="del-obj-name"/></label>'
+        );
+        $("input[name=del-obj-name]").keyup(function(e){if(e.keyCode === 13)$("#input-modal-confirm-btn").trigger("click");});
         $("#input-modal").modal("show");
     },
     showRenameDialog: function (nodeId, isdir){
@@ -423,8 +442,43 @@ $.cl = {
     },
     renderJstreeContextMenu: function(node){
         var selectedNodeId = node.id;
-        return node.type === "folder" ?
-        {
+        if (node.type !== "folder") {
+            return {
+                "open": {
+                    "label": "打开",
+                    "action": function () {
+                        if(
+                            node.type === "text"
+                            || node.type === "md"
+                            || node.type.toLowerCase() === "png"
+                            || node.type.toLowerCase() === "jpg"
+                            || node.type.toLowerCase() === "jpeg"
+                            || node.type.toLowerCase() === "gif"
+                            || node.type.toLowerCase() === "bmp"
+                        ){
+                            $.cl.openFile(selectedNodeId);
+                        }else{
+                            $.cl.popupConfirm("不支持打开二进制文件。", null, false)
+                        }
+                    }
+                },
+                "rename": {
+                    "label": "重命名",
+                    "action": function () {
+                        $.cl.showRenameDialog(selectedNodeId);
+                    }
+                },
+                "rm": {
+                    "label": "删除",
+                    "action": function() {$.cl.showDeleteConfirmDialog(selectedNodeId)}
+                },
+                "share": {
+                    "label": "分享",
+                    "action": function(){$.cl.shareFile(selectedNodeId)}
+                }
+            }
+        }
+        return {
             "new": {
                 "label": "新建文档",
                 "action": function () {
@@ -433,19 +487,14 @@ $.cl = {
             },
             "mkdir": {
                 "label": "新建文件夹",
-                "action": function(){$.cl.showMkdirDialog(selectedNodeId)}
+                "action": function () {
+                    $.cl.showMkdirDialog(selectedNodeId)
+                }
             },
             "rm": {
                 "label": "删除",
-                "action": function() {
-                    $.cl.popupConfirm(
-                        "确定要删除“" + selectedNodeId + "”？",
-                        function () {
-                            $.cl.rm(selectedNodeId)
-                        },
-                        undefined,
-                        "删除文件夹"
-                    )
+                "action": function () {
+                    $.cl.showDeleteConfirmDialog(selectedNodeId)
                 }
             },
             "rename": {
@@ -460,49 +509,7 @@ $.cl = {
                     $("#file-input").data("path", selectedNodeId).trigger("click");
                 }
             }
-        } : {
-            "open": {
-                "label": "打开",
-                "action": function () {
-                    if(
-                        node.type === "text"
-                        || node.type === "md"
-                        || node.type.toLowerCase() === "png"
-                        || node.type.toLowerCase() === "jpg"
-                        || node.type.toLowerCase() === "jpeg"
-                        || node.type.toLowerCase() === "gif"
-                        || node.type.toLowerCase() === "bmp"
-                    ){
-                        $.cl.openFile(selectedNodeId);
-                    }else{
-                        $.cl.popupConfirm("不支持打开二进制文件。", null, false)
-                    }
-                }
-            },
-            "rename": {
-                "label": "重命名",
-                "action": function () {
-                    $.cl.showRenameDialog(selectedNodeId);
-                }
-            },
-            "rm": {
-                "label": "删除",
-                "action": function() {
-                    $.cl.popupConfirm(
-                        "确定要删除“" + selectedNodeId + "”？",
-                        function () {
-                            $.cl.rm(selectedNodeId)
-                        },
-                        undefined,
-                        "删除文件"
-                    )
-                }
-            },
-            "share": {
-                "label": "分享",
-                "action": function(){$.cl.shareFile(selectedNodeId)}
-            }
-        }
+        };
     },
     getAndRenderDefaultFileListAndPage: function(){
         var jstreeInstance = $("#jstree");
@@ -823,4 +830,6 @@ $.cl = {
     },
     preventDefault: function (e){e.preventDefault()}
 };
-$(window).resize($.cl.windowSizeMonitor).on("ready", $.cl.windowSizeMonitor);$($.cl.initPage);
+
+$(window).resize($.cl.windowSizeMonitor).on("ready", $.cl.windowSizeMonitor);
+$($.cl.initPage);
