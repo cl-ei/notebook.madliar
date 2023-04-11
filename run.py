@@ -1,29 +1,19 @@
+import os
 import sys
-from aiohttp import web, web_urldispatcher
-from app.middleware import installed_middlewares
-from app.urls import user_url_map, static_url_map
+import uvicorn
+import logging
+from src.config import DEBUG
 
-
-router = web_urldispatcher.UrlDispatcher()
-for method, url_pattern, handler in user_url_map:
-    router.add_route(method, url_pattern, handler)
-
-for prefix, path in static_url_map:
-    router.add_static(prefix, path)
-
-
-sys_args = sys.argv
-if len(sys_args) < 3:
-    host = "localhost"
-    port = 10091
-else:
-    _, host, port = sys_args
-
-
-sys.stdout.write("System start args: %s, %s\n" % (host, port))
-app = web.Application(middlewares=installed_middlewares, router=router, debug=False)
-web.run_app(
-    app=app,
-    host=host,
-    port=int(port),
+os.makedirs("logs", exist_ok=True)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s]: %(message)s",
+    handlers=[
+        logging.FileHandler('logs/app.log'),
+        logging.StreamHandler(sys.stdout),
+    ],
 )
+
+
+if __name__ == "__main__":
+    uvicorn.run("src.main:app", port=10091, host="0.0.0.0", workers=1 if DEBUG else 8)

@@ -408,12 +408,12 @@ $.cl = {
     },
     shareFile: function(nodeId){
         var onShareResponsed = function (data){
-            if (data.err_code !== 0){
-                var msg = "操作失败。详细信息：" + data.err_msg;
+            if (data.code !== 0){
+                var msg = "操作失败。详细信息：" + data.msg;
                 $.cl.popupMessage(msg);
                 return ;
             }
-            var new_url = window.location.protocol + "//" + window.location.host + "/notebook/" + data.key;
+            var new_url = window.location.protocol + "//" + window.location.host + data.key;
             $.cl.popupConfirm(
                 '<p>此文件的分享链接已经生成：<br />' + new_url + '<br />在新的标签页打开吗？</p>',
                 function(){window.open(new_url)}

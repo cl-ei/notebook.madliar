@@ -3,11 +3,11 @@ import json
 from multiprocessing import Process
 from typing import Dict
 from fastapi import APIRouter, Query, Path, Body, Cookie, Request, File, Form, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, Response
 from src.utils import render_to_html
 from src.db.query.auth import AuthMgr
 from src.operation.api_handler import SupportedAction, CustomRequest
-
+from src.operation.data_io import get_share
 router = APIRouter()
 
 
@@ -56,3 +56,9 @@ async def upload(
         cookies=cookies,
         file=file,
     ))
+
+
+@router.get("/notebook/share/{email}")
+async def share(email: str = Path(...), file: str = Query(...)):
+    content = await get_share(email, file)
+    return Response(content, media_type="text/plain")

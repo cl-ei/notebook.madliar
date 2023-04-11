@@ -3,4 +3,6 @@ data
 .idea
 .DS_Store
 __pycache__
+storage*
+logs*
 *.pyc

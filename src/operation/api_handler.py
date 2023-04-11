@@ -6,7 +6,7 @@ from fastapi import UploadFile
 from fastapi.responses import JSONResponse
 from src.db.query.auth import AuthMgr
 from src.error import ErrorWithPrompt
-from src.operation import io
+from src.operation import data_io
 from src import utils
 
 
@@ -87,7 +87,7 @@ async def register(request):
 
     resp = JSONResponse({"code": 0, "email": email})
     resp.set_cookie(key="token", value=token, httponly=True)
-    await io.mkdir(email, "/")
+    await data_io.mkdir(email, "/")
     return resp
 
 
@@ -130,7 +130,7 @@ async def listdir(request: CustomRequest):
             "children": True
         }])
 
-    files = await io.listdir(request.email, path)
+    files = await data_io.listdir(request.email, path)
     return [f.dict() for f in files]
 
 
@@ -141,7 +141,7 @@ async def mkdir(request: CustomRequest):
 
     try:
         rel_path = os.path.join(node_id, dir_name)
-        await io.mkdir(request.email, rel_path)
+        await data_io.mkdir(request.email, rel_path)
     except ErrorWithPrompt as e:
         return {"code": 403, "msg": e.msg}
     return {"code": 0}
@@ -150,7 +150,7 @@ async def mkdir(request: CustomRequest):
 @SupportedAction(action="rm", login_required=True)
 async def rm(request: CustomRequest):
     node_id = request.body.get("node_id")
-    await io.rm(request.email, node_id)
+    await data_io.rm(request.email, node_id)
     return {"code": 0}
 
 
@@ -158,7 +158,7 @@ async def rm(request: CustomRequest):
 async def rename(request: CustomRequest):
     node_id = request.body.get("node_id")
     new_name = request.body.get("new_name")
-    await io.rename(request.email, node_id, new_name)
+    await data_io.rename(request.email, node_id, new_name)
     return {"code": 0}
 
 
@@ -168,7 +168,7 @@ async def newfile(request: CustomRequest):
     file_name = request.body.get("file_name")
     file = os.path.join(node_id, file_name)
     try:
-        await io.newfile(email=request.email, file=file)
+        await data_io.newfile(email=request.email, file=file)
     except ErrorWithPrompt as e:
         return {"code": 400, "msg": e.msg}
     return{"code": 0}
@@ -192,7 +192,7 @@ async def openfile(request: CustomRequest):
                 "path": file
             }
 
-    content = await io.openfile(request.email, file)
+    content = await data_io.openfile(request.email, file)
     return {
         "code": 0,
         "content": content,
@@ -204,46 +204,15 @@ async def openfile(request: CustomRequest):
 async def save(request: CustomRequest):
     file = request.body.get("node_id")
     content = request.body.get("content")
-    await io.savefile(request.email, file, content)
+    await data_io.savefile(request.email, file, content)
     return {"code": 0}
 
 
 @SupportedAction(action="share", login_required=True)
-def share(request):
-    path = request.postdata.get("node_id")
-    email = request.cookies.get("email")
-
-    # 检查path
-    if path.split("/")[0] != email:
-        return json_to_response({
-            "err_code": 403,
-            "err_msg": "路径不存在，请稍后再试。"
-        })
-    if type(path) != str:
-        try:
-            path = path.decode("utf-8")
-        except Exception:
-            return json_to_response({
-                "err_code": 403,
-                "err_msg": "错误的编码格式。"
-            })
-
-    if os.name in ("nt", ):
-        path = "\\".join(path.split("/"))
-    full_path = os.path.join(app_notebook_path, path)
-
-    if not os.path.exists(full_path):
-        return json_to_response({
-            "err_code": 403,
-            "err_msg": "内容不存在。"
-        })
-
-    result, data = dao.share_file(full_path)
-    if result:
-        response_data = {"err_code": 0, "key": data}
-    else:
-        response_data = {"err_code": 403, "err_msg": data}
-    return json_to_response(response_data)
+async def share(request: CustomRequest):
+    file = request.body.get("node_id")
+    await data_io.create_share(request.email, file=file)
+    return {"code": 0, "key": f"/notebook/share/{request.email}?file={file}"}
 
 
 @SupportedAction(action="upload_file", login_required=True)
@@ -252,5 +221,5 @@ async def upload_file(request: CustomRequest):
     filename = request.file.filename
     savefile = os.path.join(path.lstrip("/"), filename)
     content: bytes = await request.file.read(1024*1024*5)
-    await io.savefile(request.email, savefile, content, create=True)
+    await data_io.savefile(request.email, savefile, content, create=True)
     return {"code": 0}
