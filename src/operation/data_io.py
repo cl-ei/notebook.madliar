@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from typing import *
 from src.config import DEBUG
 from src import utils
-from src.error import ErrorWithPrompt
+from src.error import ErrorWithPrompt, NotFound
 
 
 storage_root = "./storage" if DEBUG else "/data/storage"
@@ -39,6 +39,13 @@ class FileLike(BaseModel):
     type: Optional[str] = ""
     text: Optional[str] = ""
     children: bool = True
+
+
+class FileOpenRespData(BaseModel):
+    version: int
+    base: int
+    base_content: str
+    diff: List[DiffItem] = []
 
 
 async def mkdir(email: str, path: str):
@@ -105,51 +112,59 @@ async def rename(email: str, old_path: str, new_name: str):
     os.rename(dist, new_path)
 
 
-async def _get_file_by_version_file(meta_path: str, version: Union[str, int]) -> str:
+async def _get_file_by_version(file: str, version: int) -> FileOpenRespData:
     """
     通过 version file 还原 全量文件
+
+    Params
+    ------
+    version: int，必须存在，当其为0时，返回原文件
 
     Returns
     -------
     content: str 全量内容
     """
+    # version 为 0，返回源文件
+    if version < 0:
+        raise ErrorWithPrompt(f"文件版本({version})不存在")
+
+    if version == 0:
+        try:
+            with open(file, "rb") as f:
+                bin_content = f.read()
+            content = bin_content.decode("utf-8")
+        except FileNotFoundError:
+            raise ErrorWithPrompt("文件不存在")
+        except UnicodeDecodeError:
+            raise ErrorWithPrompt("文件编码错误，请使用utf-8编码")
+
+        return FileOpenRespData(version=0, base=0, base_content=content)
+
+    meta_path = f"{file}.meta"
     try:
         with open(os.path.join(meta_path, f"v{version}"), "rb") as f:
             ver_content = f.read()
     except FileNotFoundError:
-        raise ErrorWithPrompt("文件版本不存在")
+        raise ErrorWithPrompt(f"文件版本({version})不存在")
 
-    version = VersionFile(**json.loads(ver_content))
+    vf = VersionFile(**json.loads(ver_content))
+
+    # 读取 base 文件
+    base_file = os.path.join(meta_path, f"b{vf.base}") if vf.base > 0 else file
     try:
-        with open(os.path.join(meta_path, f"b{version.base}"), "rb") as f:
+        with open(base_file, "rb") as f:
             bin_content = f.read()
         content = bin_content.decode("utf-8")
     except FileNotFoundError:
         raise ErrorWithPrompt("该版本源文件已不存在")
     except UnicodeDecodeError:
         raise ErrorWithPrompt("文件编码错误，请使用utf-8编码")
-
-    # 如果 version 里没有 diff, 则直接返回 base
-    if not version.diff:
-        return content
-
-    result = []
-    proc_index = 0
-    for d in version.diff:
-        if d.added is True:
-            result.append(d.value)
-            proc_index += d.count
-        elif d.removed is True:
-            proc_index += d.count
-        else:
-            result.append(content[proc_index: proc_index + d.count])
-            proc_index += d.count
-    return "".join(result)
+    return FileOpenRespData(version=version, base=vf.base, base_content=content, diff=vf.diff)
 
 
 async def _get_last_vb_of_file(file) -> Tuple[Optional[int], Optional[int]]:
     """
-    当 version 或者 base file 不存在时，返回 None
+    当 version 或者 base file 不存在时，返回 0。按照约定，0代表原文件
 
     Returns
     -------
@@ -157,92 +172,61 @@ async def _get_last_vb_of_file(file) -> Tuple[Optional[int], Optional[int]]:
     base: int
     """
     meta_path = f"{file}.meta"
+    last_version = 0
+    last_base = 0
     try:
-        last_version = -1
-        last_base = -1
         for filename in os.listdir(meta_path):
-            if os.path.isfile(os.path.join(meta_path, filename)):
-                if filename.startswith("v"):
-                    this_version = int(filename[1:])
-                    if this_version > last_version:
-                        last_version = this_version
-                elif filename.startswith("b"):
-                    this_base = int(filename[1:])
-                    if this_base > last_base:
-                        last_base = this_base
+            if not os.path.isfile(os.path.join(meta_path, filename)):
+                continue
 
-        version = last_version if last_version >= 0 else None
-        base = last_base if last_base > 0 else None
-        return version, base
+            if filename.startswith("v"):
+                this_version = int(filename[1:])
+                if this_version > last_version:
+                    last_version = this_version
+            elif filename.startswith("b"):
+                this_base = int(filename[1:])
+                if this_base > last_base:
+                    last_base = this_base
     except FileNotFoundError:
-        return None, None
+        pass
+    return last_version, last_base
 
 
-async def openfile(email: str, file: str, version: str) -> Tuple[str, str]:
+async def openfile(email: str, file: str, version: int = None) -> FileOpenRespData:
     """
     获取文件：
         request args:
             file（node_id）: 文件路径
             version: numeric str, 版本号，可为空。为空时，返回最新版本号，没有最新版，则返回空
         response:
-            version: str 版本号，不为空。
-                - 如果为0，则为原始文件。
-                - 大于0时，每个版本必关联一个 base: 原始文件，版本号是基于base的差异，版本之间无关联
-            content: 全量内容
-
-    Returns
-    -------
-    content: str 全量内容
-    version: str 版本号
+            version: int
+            base: int
+            base_content: str
+            diff: List[DiffItem] = []
     """
     dist = os.path.join(storage_root, email, file.lstrip("/"))
     if not os.path.exists(dist) or not os.path.isfile(dist):
         raise ErrorWithPrompt("文件不存在")
 
-    meta_path = f"{dist}.meta"
-    if version:
-        content = await _get_file_by_version_file(meta_path, version)
-        return content, version
-    else:
-        # 没有指定版本，获取最新版本
-        last_version, _ = await _get_last_vb_of_file(dist)
-        logging.debug(f"not specified version, load last ver: {last_version}")
-        if last_version is not None:
-            content = await _get_file_by_version_file(meta_path, last_version)
-            return content, f"{last_version}"
+    if version is None:
+        version, _ = await _get_last_vb_of_file(dist)
 
-    # 版本号为空, 返回原生文件
-    # 上传的文件没有版本，会走到这里；用户上传的文件同时没有版本号的，一定是空文件
-    with open(dist, "rb") as f:
-        bin_data = f.read()
-    try:
-        content = bin_data.decode("utf-8")
-    except UnicodeDecodeError:
-        raise ErrorWithPrompt("编码错误，请使用utf-8编码")
-    return content, ""
+    return await _get_file_by_version(dist, version)
 
 
-async def savefile(email: str, file: str, content: Union[str, bytes], create=False) -> str:
+async def savefile(email: str, file: str, content: Union[str, bytes], create=False) -> Tuple[int, int]:
     """
     全量保存文件
 
-    1. 如果为二进制文件，直接保存，version 返回 ""(ignore, 二进制文件不能保存，只能通过 upload 接口覆盖)
-    2. 文本类文件，寻找最新version和base，创建base，并根据该base创建version
+    1. 寻找最新 version 和 base，创建 base，并根据该 base 创建 version
 
     Returns
     -------
-    version: str 版本号
+    version: int 版本号
+    base: int base
 
     # TODO: add lock
     """
-    dist = os.path.join(storage_root, email, file.lstrip("/"))
-    if not os.path.exists(dist) or not os.path.isfile(dist):
-        if not create:
-            raise ErrorWithPrompt("文件不存在")
-
-        parent, _ = os.path.split(dist)
-        os.makedirs(parent, exist_ok=True)
-
     if isinstance(content, str):
         try:
             bin_content = content.encode("utf-8")
@@ -251,15 +235,18 @@ async def savefile(email: str, file: str, content: Union[str, bytes], create=Fal
     else:
         bin_content = content
 
-    # 读取的逻辑已经处理，不需要写原文件，故进行注释
-    # with open(dist, "wb") as f:
-    #     f.write(bin_content)
+    dist = os.path.join(storage_root, email, file.lstrip("/"))
+    if not os.path.exists(dist) or not os.path.isfile(dist):
+        if not create:
+            raise ErrorWithPrompt("文件不存在")
 
-    # 创建版本
+        parent, _ = os.path.split(dist)
+        os.makedirs(parent, exist_ok=True)
+
+    # 创建
     # 寻找最新版本
     last_version, last_base = await _get_last_vb_of_file(dist)
-    target_version = 0 if last_version is None else last_version + 1
-    target_base = 0 if last_base is None else last_base + 1
+    target_version, target_base = last_version + 1, last_base + 1
 
     # 创建base
     meta_path = f"{dist}.meta"
@@ -272,24 +259,62 @@ async def savefile(email: str, file: str, content: Union[str, bytes], create=Fal
     with open(os.path.join(meta_path, f"v{target_version}"), "wb") as f:
         f.write(version_data.json(ensure_ascii=False).encode("utf-8"))
 
-    return str(target_version)
+    return target_version, target_base
 
 
-async def savefile_delta(email: str, file: str, based_version: str, base_md5: str, diff: List[DiffItem]) -> str:
+async def savefile_delta(email: str, path: str, base: int, dist_md5: str, diff: List[DiffItem]) -> Tuple[int, int]:
     """
     增量保存文件
 
-    1. 根据参数还原原始文本
-    2. 检查 md5 是否一致
-    3. 获取最新版本，创建该版本，base 指定为该 base
-    4. 将 version 返回
+    1. 获取原始 base
+    2. 根据 diff 生成目标内容
+    3. 判断 md5 是否一致
+    4. 存储 version 文件，（如果与base差距过大，重新分配base）（取最大version）
+    4. 将 version 和 base 返回
 
     # TODO: 当 diff 过大，不值得保存增量文件时，重新生成 base，并基于新 base 生成 version
 
     Returns
     -------
-    version: str 版本号
+    version: int 版本号
+    base: int
     """
+    file = os.path.join(storage_root, email, path.lstrip("/"))
+    meta_path = os.path.join(f"{file}.meta")
+    base_file = os.path.join(meta_path, f"b{base}") if base > 0 else file
+    try:
+        with open(base_file, "rb") as f:
+            bin_content = f.read()
+        content = bin_content.decode("utf-8")
+    except FileNotFoundError:
+        raise ErrorWithPrompt("原文件不存在")
+    except UnicodeDecodeError:
+        raise ErrorWithPrompt("文件编码错误")
+
+    result = []
+    index = 0
+    for d in diff:
+        if d.added is True:
+            result.append(d.value)
+        elif d.removed is True:
+            index += d.count
+        else:
+            result.append(content[index: index + d.count])
+            index += d.count
+    result.append(content[index:])
+    result_md5 = utils.calc_md5("".join(result))
+    if result_md5 != dist_md5:
+        print(f"result: {result}, {result_md5}, d>{dist_md5}<, content: {content}, diff: {diff}")
+        raise ErrorWithPrompt("文件不一致")
+
+    version, max_base = await _get_last_vb_of_file(file)
+    target_version = version + 1
+    # TODO: judge and rebuild base
+    vf = VersionFile(base=base, diff=diff, create_time=f"{datetime.datetime.now()}")
+    os.makedirs(meta_path, exist_ok=True)
+    with open(os.path.join(meta_path, f"v{target_version}"), "wb") as f:
+        f.write(json.dumps(vf.dict()).encode("utf-8"))
+    return target_version, base
 
 
 async def create_share(email: str, file: str):
@@ -310,7 +335,7 @@ async def get_share(email: str, file: str) -> str:
     rel_file_path = file.lstrip("/")
     share_meta = os.path.join(storage_root, email, f"{rel_file_path}.meta", "share.txt")
     if not os.path.exists(share_meta) or not os.path.isfile(share_meta):
-        raise ErrorWithPrompt("权限错误")
+        raise NotFound()
 
     dist_file = os.path.join(storage_root, email, rel_file_path)
     if not os.path.exists(share_meta) or not os.path.isfile(share_meta):

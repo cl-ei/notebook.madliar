@@ -182,22 +182,32 @@ $.cl = {
         $("#input-modal").modal("show");
     },
 
-    docContent: "",
+    docBaseContent: "",
     getCurrentDoc: function () {
+        let ver = parseInt(localStorage.docVer),
+            bs = parseInt(localStorage.docBase);
         return {
-            path: localStorage.docPath === undefined ? "" : localStorage.docPath,
-            version: localStorage.docVer === undefined ? "" : localStorage.docVer,
-            content: $.cl.docContent,
+            path: localStorage.docPath,
+            version: isNaN(ver) ? undefined : ver,
+            base: isNaN(bs) ? undefined : bs,
+            baseContent: $.cl.docBaseContent,
         }
     },
     setCurrentDoc: function (option) {
-        // 如果设置其他两项，则 path 保持
-        // 如果设置 path 而未指定 ver 和 content, 则清空后两者
+        // 如果设置其他项，则 path 保持
+        // 如果设置 path 而未指定 ver 和 content, 则清空后者
         if (option.path !== undefined) {
             localStorage.docPath = option.path;
         }
-        localStorage.docVer = option.version || "";
-        $.cl.docContent = option.content || "";
+        localStorage.docVer = option.version;
+        if (option.base !== undefined) {
+            localStorage.docBase = option.base;
+        }
+        if (option.baseContent !== undefined) {
+            $.cl.docBaseContent = option.baseContent;
+        }
+
+        let s = $.cl.getCurrentDoc();
     },
 
     openJstreeNode: function (nodeId){
@@ -426,16 +436,38 @@ $.cl = {
                 $.cl.popupMessage(msg);
                 return ;
             }
+            let baseContent = data.base_content,
+                diff = data.diff,
+                resultContents = [],
+                index = 0,
+                renderContent = "";
+            if (diff.length === 0) {
+                renderContent = baseContent;
+            } else {
+                for (let i = 0; i < diff.length; i++) {
+                    let d = diff[i];
+                    if (d.added === true) {
+                        resultContents.push(d.value);
+                    } else if (d.removed === true) {
+                        index += d.count;
+                    } else {
+                        resultContents.push(baseContent.substring(index, index + d.count));
+                        index += d.count;
+                    }
+                }
+                resultContents.push(baseContent.substring(index))
+                renderContent = resultContents.join("");
+            }
 
-            $.cl.setCurrentDoc({path: data.path, version: data.version, content: data.content});
+            $.cl.setCurrentDoc({path: nodeId, version: data.version, base: data.base, baseContent: baseContent});
             $.cl.renderCurrentEditDocumentTitle();
 
             if (data.img !== true){
-                document.getElementById('input-text-area').value = data.content;
+                document.getElementById('input-text-area').value = renderContent;
                 return;
             }
 
-            // 预览图片，渲染dom
+            // TODO: 预览图片，渲染dom，暂不实现
             var new_url = window.location.protocol + "//" + window.location.host + "/notebook/" + data.key;
             document.getElementById('input-text-area').value = [
                 "<img src=\"",
@@ -665,46 +697,57 @@ $.cl = {
         var content = $("#input-text-area").val();
         if (!content.trim(" \n\r\t")) return;
 
-        // 进入保存逻辑
         let curDoc = $.cl.getCurrentDoc();
-
-        if (curDoc.path.length > 0){
-            let reqData = {action: "save", node_id: curDoc.path};
-            if (curDoc.version.length > 0 && curDoc.content.length > 0) {
-                // 如果有版本号，则计算原始文档的diff
-                reqData["range"] = "delta";
-                reqData["based_version"] = curDoc.version;
-
-                let rawDiff = Diff.diffChars(curDoc.content, content),
-                    postDiff = [];
-                for (let i = 0; i < rawDiff.length; i++) {
-                    let d = rawDiff[i];
-                    if (d.added === undefined && d.removed === undefined) {
-                        d.value = ""
-                    }
-                    postDiff.push(d)
-                }
-                reqData["diff"] = postDiff
-                reqData["base_md5"] = md5(curDoc.content);
-            } else {
-                // 没有版本号，全量保存
-                reqData["range"] = "all";
-                reqData["content"] = content;
-            }
-
-            $.cl.clearMessage();
-            $.cl.sendRequest(reqData, function (data) {
-                // 保存成功后进入此
-                // TODO：也许需要重新处理 version
-                if (data.code !== 0){
-                    $.cl.popupMessage("操作失败。详细信息：" + data.msg);
-                    return ;
-                }
-                $.cl.popupMessage("保存成功！", null, 2)
-                $.cl.setCurrentDoc({version: data.version, content: content})
-            });
-            return ;
+        if (curDoc.path === undefined || curDoc.length === 0) {
+            return;
         }
+
+        // 进入保存逻辑, range分两种情况
+        // - all: 提交 content
+        // - delta: 提交 base: int, dist_md5: str, diff: List
+        let reqData = {action: "save", node_id: curDoc.path};
+        if (curDoc.base === undefined) {
+            // 没有 base，全量保存
+            reqData["range"] = "all";
+            reqData["content"] = content;
+        } else {
+            // 如果有版本号，则计算原始文档的diff
+            reqData["range"] = "delta";
+            reqData["base"] = curDoc.base;
+            reqData["dist_md5"] = md5(content);
+
+            let rawDiff = Diff.diffChars(curDoc.baseContent, content),
+                postDiff = [];
+            for (let i = 0; i < rawDiff.length; i++) {
+                let d = rawDiff[i];
+                if (d.added === undefined && d.removed === undefined) {
+                    d.value = ""
+                }
+                postDiff.push(d)
+            }
+            reqData["diff"] = postDiff;
+        }
+
+        $.cl.clearMessage();
+        $.cl.sendRequest(reqData, function (data) {
+            // 保存成功后进入此
+            if (data.code !== 0){
+                $.cl.popupMessage("操作失败。详细信息：" + data.msg);
+                return ;
+            }
+            $.cl.popupMessage("保存成功！", null, 2)
+            let curDoc = $.cl.getCurrentDoc();
+            console.log("data.base: ", data.base);
+            console.log("curDoc.base: ", curDoc.base);
+
+            if (data.base === curDoc.base) {
+                $.cl.setCurrentDoc({version: data.version})
+            } else {
+                $.cl.setCurrentDoc({version: data.version, base: data.base, baseContent: content})
+            }
+        });
+
+        return;
         /* show confirm
         console.log("confirm?")
         var path = "",

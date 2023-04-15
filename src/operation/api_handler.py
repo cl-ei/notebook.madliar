@@ -178,38 +178,51 @@ async def newfile(request: CustomRequest):
 async def openfile(request: CustomRequest):
     """
     打开文件和保存文件的逻辑
+    创建 base 的规则：
+    - 初始 base 与该version对应，如：b0 <=> v0, b10 <=> v10
+    - 当基于某个 base 的 version 超过10的时候，rebuild base
+    - 当某个 diff 超过100K的时候，rebuild base
 
     获取文件：
         request args:
             file（node_id）: 文件路径
-            version: numeric str, 版本号，可为空。为空时，返回最新版本号
-        response:
-            version: str 版本号，可为空。
-                - 为空，则为原始文件。
-                - 否则为某版本，从0开始，每个版本必关联一个 base: 原始文件，版本号是基于base的差异，版本之间无关联
-            content: 全量内容
+            version: int, 版本号，可为空。为空时，返回最新版本号
 
+        response:
+            version: int 版本号，不可为空。从0开始，每个版本必关联一个。版本号是基于 base 的差异，版本之间无关联
+            base: int, base的版本，不可为空，从0开始。
+                - 约定：version 0 与 base 0 对应，当获取不到 meta 文件时，content 返回原文件，base 和 version 都返回 0；
+                    即，meta 文件当中，真正的 base 和 version 都是从 1 开始
+            base_content: str, base 的内容
+            diff: List, 从 base 到该版本的增量，可为空列表。为空时，代表无差异
+
+            # TODO:
             img: bool 若为图片文件，则此 value 为 True
 
     保存文件:
         request args:
             range: str, "all" 或 "delta", 全量或增量
-                - all: 此时直接保存 content 为新的 base，并为此 base 创建version
-                - delta: 此时需要增量保存，需要根据based version 还原出 base，验证 md5 是否正确，并将增量（diff）保存为新版本。
-                    若md5不正确，则返回 错误，改为全量保存
-
-                note: 没有version时，必须采用全量保存
+                - all: 此时直接保存 content 为新的 base，并为此 base 创建 version
+                - delta: 此时需要增量保存，根据 base 取原始内容，根据 diff 生成新文本，再验证md5。
+                    并将增量（diff）保存为新版本。若md5不正确，则返回 错误，前端改为全量保存
+                    这一步，根据diff大小适时改变 base，前端收到后比对 base 值，更新自身 base
+                没有version时，必须采用全量保存
 
             content: Optional[str]
 
-            based_version: str
-            base_md5: str
+            base: int
+            dist_md5: str
             diff: List
+
         response:
-            version: str, 保存之后的版本号
+            base: int, 保存之后的 base
+            version: int, 保存之后的版本号
     """
     file = request.body.get("node_id")
-    version = request.body.get("version", "")
+    try:
+        version = request.body.get("version")
+    except (ValueError, TypeError):
+        version = None
 
     # special logic: judge img
     path, inner = os.path.split(file)
@@ -225,13 +238,10 @@ async def openfile(request: CustomRequest):
                 "path": file
             }
 
-    content, version = await data_io.openfile(request.email, file, version)
-    return {
-        "code": 0,
-        "content": content,
-        "version": version,
-        "path": file,
-    }
+    fr: data_io.FileOpenRespData = await data_io.openfile(request.email, file, version)
+    resp_dict = fr.dict()
+    resp_dict["code"] = 0
+    return resp_dict
 
 
 @SupportedAction(action="save", login_required=True)
@@ -240,25 +250,31 @@ async def save(request: CustomRequest):
     save_range = request.body.get("range")
     if save_range == "all":
         content = request.body.get("content")
-        version = await data_io.savefile(request.email, file, content)
+        version, base = await data_io.savefile(request.email, file, content)
 
     elif save_range == "delta":
-        based_version: str = request.body.get("based_version")
-        base_md5: str = request.body.get("base_md5")
-        diff = [data_io.DiffItem(**d) for d in request.body.get("diff")]
-        version = await data_io.savefile_delta(request.email, file, based_version, base_md5, diff)
+        try:
+            base: int = int(request.body.get("base"))
+        except (ValueError, TypeError):
+            raise ErrorWithPrompt("错误的base")
+        dist_md5: str = request.body.get("dist_md5", "")
+        diff = [data_io.DiffItem(**d) for d in request.body.get("diff", [])]
+        version, base = await data_io.savefile_delta(request.email, file, base, dist_md5, diff)
 
     else:
         raise ErrorWithPrompt("不支持此保存方式")
 
-    return {"code": 0, "version": version}
+    return {"code": 0, "version": version, "base": base}
 
 
 @SupportedAction(action="share", login_required=True)
 async def share(request: CustomRequest):
     file = request.body.get("node_id")
     await data_io.create_share(request.email, file=file)
-    return {"code": 0, "key": f"/notebook/share/{request.email}?file={file}"}
+    user, service = request.email.split("@", 1)
+    service_enc = utils.CustomEncode.encode(service)
+    file_enc = utils.CustomEncode.encode(file)
+    return {"code": 0, "key": f"/notebook/share/{user}.{service_enc}/{file_enc}"}
 
 
 @SupportedAction(action="upload_file", login_required=True)
