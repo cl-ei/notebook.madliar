@@ -4,7 +4,8 @@
  * https://github.com/chjj/marked
  */
 
-;(function() {
+;window.markedImageParseCB = undefined;
+(function() {
 
 /**
  * Block-Level Grammar
@@ -888,6 +889,9 @@ Renderer.prototype.link = function(href, title, text) {
 };
 
 Renderer.prototype.image = function(href, title, text) {
+  if (window.markedImageParseCB !== undefined) {
+    href = window.markedImageParseCB(href);
+  }
   var out = '<img src="' + href + '" alt="' + text + '"';
   if (title) {
     out += ' title="' + title + '"';

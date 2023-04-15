@@ -1,9 +1,10 @@
 import datetime
 import json
+import logging
 import mimetypes
 import os
 import shutil
-from pydantic import BaseModel
+from pydantic import BaseModel, BaseConfig
 from typing import *
 from src.config import DEBUG
 from src import utils
@@ -21,27 +22,65 @@ meta:   - {storage_root}/{email}/user_root/readme.md.meta/
 """
 
 
-class DiffItem(BaseModel):
+def convert_datetime_to_realworld(dt: datetime.datetime) -> str:
+    return dt.replace(tzinfo=datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def convert_field_to_camel_case(string: str) -> str:
+    return "".join(
+        word if index == 0 else word.capitalize()
+        for index, word in enumerate(string.split("_"))
+    )
+
+
+class RWModel(BaseModel):
+    class Config(BaseConfig):
+        allow_population_by_field_name = True
+        json_encoders = {datetime.datetime: lambda dt: dt.strftime("%Y-%m-%d %H:%M:%S")}
+
+
+class DiffItem(RWModel):
     count: int
     added: bool = False
     removed: bool = False
     value: str = ""
 
 
-class VersionFile(BaseModel):
+class VersionBrief(RWModel):
+    version: int
+    base: int
+    create_time: datetime.datetime
+    lines: int = 0
+
+
+IndexFileT = TypeVar("IndexFileT", bound="IndexFile")
+
+
+class IndexFile(RWModel):
+    versions: List[VersionBrief] = []
+
+    @classmethod
+    def parse_file(cls, file: str) -> IndexFileT:
+        try:
+            return super().parse_file(file)
+        except FileNotFoundError:
+            return cls()
+
+
+class VersionFile(RWModel):
     base: int
     diff: List[DiffItem] = []
-    create_time: str
+    create_time: datetime.datetime
 
 
-class FileLike(BaseModel):
+class FileLike(RWModel):
     id: Optional[str] = ""
     type: Optional[str] = ""
     text: Optional[str] = ""
     children: bool = True
 
 
-class FileOpenRespData(BaseModel):
+class FileOpenRespData(RWModel):
     version: int
     base: int
     base_content: str
@@ -158,12 +197,9 @@ async def _get_file_by_version(file: str, version: int) -> FileOpenRespData:
 
     meta_path = f"{file}.meta"
     try:
-        with open(os.path.join(meta_path, f"v{version}"), "rb") as f:
-            ver_content = f.read()
+        vf = VersionFile.parse_file(os.path.join(meta_path, f"v{version}"))
     except FileNotFoundError:
         raise ErrorWithPrompt(f"文件版本({version})不存在")
-
-    vf = VersionFile(**json.loads(ver_content))
 
     # 读取 base 文件
     base_file = os.path.join(meta_path, f"b{vf.base}") if vf.base > 0 else file
@@ -188,23 +224,19 @@ async def _get_last_vb_of_file(file) -> Tuple[Optional[int], Optional[int]]:
     base: int
     """
     meta_path = f"{file}.meta"
+    index_file = os.path.join(meta_path, "index.json")
     last_version = 0
     last_base = 0
-    try:
-        for filename in os.listdir(meta_path):
-            if not os.path.isfile(os.path.join(meta_path, filename)):
-                continue
 
-            if filename.startswith("v"):
-                this_version = int(filename[1:])
-                if this_version > last_version:
-                    last_version = this_version
-            elif filename.startswith("b"):
-                this_base = int(filename[1:])
-                if this_base > last_base:
-                    last_base = this_base
+    try:
+        index_f: IndexFile = IndexFile.parse_file(index_file)
     except FileNotFoundError:
-        pass
+        return 0, 0
+    for v in index_f.versions:
+        if v.base > last_base:
+            last_base = v.base
+        if v.version > last_version:
+            last_version = v.version
     return last_version, last_base
 
 
@@ -223,10 +255,10 @@ async def openfile(email: str, file: str, version: int = None) -> FileOpenRespDa
     dist = os.path.join(storage_root, email, file.lstrip("/"))
     if not os.path.exists(dist) or not os.path.isfile(dist):
         raise ErrorWithPrompt("文件不存在")
-
+    logging.info(f"get version: {version}")
     if version is None:
         version, _ = await _get_last_vb_of_file(dist)
-
+    logging.info(f"get last version: {version}")
     return await _get_file_by_version(dist, version)
 
 
@@ -240,8 +272,6 @@ async def savefile(email: str, file: str, content: Union[str, bytes], create=Fal
     -------
     version: int 版本号
     base: int base
-
-    # TODO: add lock
     """
     if isinstance(content, str):
         try:
@@ -277,10 +307,17 @@ async def savefile(email: str, file: str, content: Union[str, bytes], create=Fal
         f.write(bin_content)
 
     # 创建version
-    version_data = VersionFile(base=target_base, create_time=f"{datetime.datetime.now()}")
+    now = datetime.datetime.now()
+    version_data = VersionFile(base=target_base, create_time=now)
     with open(os.path.join(meta_path, f"v{target_version}"), "wb") as f:
         f.write(version_data.json(ensure_ascii=False).encode("utf-8"))
 
+    # 更新 index
+    index_filename = os.path.join(meta_path, "index.json")
+    index_f: IndexFile = IndexFile.parse_file(index_filename)
+    index_f.versions.append(VersionBrief(version=target_version, base=target_base, create_time=now))
+    with open(index_filename, "wb") as f:
+        f.write(index_f.json(ensure_ascii=False).encode("utf-8"))
     return target_version, target_base
 
 
@@ -294,7 +331,7 @@ async def savefile_delta(email: str, path: str, base: int, dist_md5: str, diff: 
     4. 存储 version 文件，（如果与base差距过大，重新分配base）（取最大version）
     4. 将 version 和 base 返回
 
-    # TODO: 当 diff 过大，不值得保存增量文件时，重新生成 base，并基于新 base 生成 version
+    # 当 diff 过大，不值得保存增量文件时，重新生成 base，并基于新 base 生成 version
 
     Returns
     -------
@@ -321,6 +358,7 @@ async def savefile_delta(email: str, path: str, base: int, dist_md5: str, diff: 
     version, max_base = await _get_last_vb_of_file(file)
     target_version = version + 1
     os.makedirs(meta_path, exist_ok=True)
+    now = datetime.datetime.now()
     if (
         (target_version > 0 and target_version % 10 == 0) or
         len(diff) > 10 or
@@ -335,14 +373,25 @@ async def savefile_delta(email: str, path: str, base: int, dist_md5: str, diff: 
         with open(target_base_file, "wb") as f:
             f.write(target_content.encode("utf-8"))
         # save version file
-        vf = VersionFile(base=target_base, diff=[], create_time=f"{datetime.datetime.now()}")
+        vf = VersionFile(base=target_base, diff=[], create_time=now)
 
     else:
         target_base = base
-        vf = VersionFile(base=base, diff=diff, create_time=f"{datetime.datetime.now()}")
+        vf = VersionFile(base=base, diff=diff, create_time=now)
 
     with open(os.path.join(meta_path, f"v{target_version}"), "wb") as f:
-        f.write(json.dumps(vf.dict()).encode("utf-8"))
+        f.write(vf.json(ensure_ascii=False).encode("utf-8"))
+
+    # 更新 index file
+    index_filename = os.path.join(meta_path, "index.json")
+    index_f: IndexFile = IndexFile.parse_file(index_filename)
+    index_f.versions.append(VersionBrief(
+        version=target_version, base=target_base, create_time=now,
+        lines=len([d for d in diff if d.added is True or d.removed is True])
+    ))
+    with open(index_filename, "wb") as f:
+        f.write(index_f.json(ensure_ascii=False).encode("utf-8"))
+
     return target_version, target_base
 
 
@@ -389,7 +438,7 @@ async def get_share(email: str, file: str) -> str:
 async def get_original_file(email: str, file) -> Tuple[str, bytes]:
     dist_file = os.path.join(storage_root, email, file)
     if not os.path.isfile(dist_file):
-        raise ErrorWithPrompt("文件不存在")
+        raise NotFound()
 
     mimetype, _ = mimetypes.guess_type(dist_file)
     with open(dist_file, "rb") as f:

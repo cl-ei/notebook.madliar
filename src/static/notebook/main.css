@@ -156,6 +156,9 @@ input{
     overflow: auto;
     padding: 0 20px;
 }
+#content-text img{
+    max-width: 100%;
+}
 #uavaliable-mask{
     display: none;
     text-align: center;

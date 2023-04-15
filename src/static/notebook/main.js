@@ -489,12 +489,7 @@ $.cl = {
             }
             if (data.img === true) {
                 // 预览图片，渲染dom
-                var new_url = window.location.protocol + "//" + window.location.host + data.url;
-                document.getElementById('input-text-area').value = [
-                    "<img src=\"",
-                    new_url,
-                    "\" style=\"width:100%\">"
-                ].join("");
+                document.getElementById('input-text-area').value = '![](' + data.url + ')';
                 $.cl.clearCurrentDoc();
                 $.cl.setCurrentDoc({path: nodeId});
                 $.cl.renderCurrentEditDocumentTitle();
@@ -980,6 +975,22 @@ $.cl = {
             $.cl.uploadFile(file, path);
         });
         $.cl.daemonToTransMdId = $.cl.daemonToTransMd();
+        if (window.markedImageParseCB === undefined) {
+            window.markedImageParseCB = (href) => {
+                let username = window.contextData.loginInfo.email.split("@", 1);
+                let service = window.contextData.loginInfo.email.substring(username.length + 1);
+                if (href.substring(0, "/notebook/img_preview/".length) === "/notebook/img_preview/") {
+                    return href;
+                } else if (href[0] === "/") {
+                    return "/notebook/img_preview/" + username + "/" + service + href;
+                } else {
+                    let curDoc = $.cl.getCurrentDoc();
+                    let index = curDoc.path.lastIndexOf("/");
+                    let parentPath = curDoc.path.slice(0, index);
+                    return "/notebook/img_preview/" + username + "/" + service + parentPath + "/" + href;
+                }
+            }
+        }
         /*
          * drag event
          * ctrl key event
