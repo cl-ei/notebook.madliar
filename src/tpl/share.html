@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html class="no-js" lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <title>{{ title }}</title>
+    {% if author %}<meta name="author" content="{{ author }}" />{% endif %}
+    <meta name="HandheldFriendly" content="True" />
+    <meta name="MobileOptimized" content="320" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <link rel="stylesheet" href="{{ CDN_URL }}/notebook/static/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ CDN_URL }}/notebook/static/css/font-awesome.min.css">
+    <link rel="stylesheet" href="{{ CDN_URL }}/notebook/static/notebook/share.css">
+</head>
+<body>
+<div class="share-container">
+    <h2>{{ title }}</h2>
+    <hr>
+    <div class="post-content {% if not need_trans %}keep-space{% endif %}" id="article-detail">{{ content }}</div>
+</div>
+<script>window.CDN_URL = "{{ CDN_URL }}";</script>
+
+{% if need_trans %}
+<script type="text/javascript" src="{{ CDN_URL }}/notebook/static/js/jquery.min.js"></script>
+<script type="text/javascript" src="{{ CDN_URL }}/notebook/static/js/marked.js"></script>
+<script>
+    $(function(){
+        if (window.markedImageParseCB === undefined) {
+            window.markedImageParseCB = (href) => {
+                let em = window.location.pathname.substring("/notebook/share/".length).split("/", 2);
+                let username = em[0],
+                    service = em[1];
+                if (href.substring(0, "/notebook/img_preview/".length) === "/notebook/img_preview/") {
+                    return href;
+                } else if (href[0] === "/") {
+                    return "/notebook/img_preview/" + username + "/" + service + href;
+                } else {
+                    let relPath = window.location.pathname.substring(("/notebook/share/" + username + "/" + service).length);
+                    let paths = relPath.split("/"),
+                        parent = [];
+                    for (let i = 0; i < paths.length - 1; i++) {
+                        if(paths[i].length < 1) {
+                            continue;
+                        }
+                        parent.push(paths[i]);
+                    }
+                    parent.push(href);
+                    return "/notebook/img_preview/" + username + "/" + service + "/" + parent.join("/");
+                }
+            }
+        }
+        var articleDom = $("#article-detail");
+        articleDom.html(marked(articleDom.text()));
+    })
+</script>
+{% endif %}
+</body>
+</html>

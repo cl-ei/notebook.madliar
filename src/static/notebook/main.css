@@ -35,6 +35,14 @@ input{
     padding-left: 10px;
     outline: none;
 }
+.broken-image {
+    background-image: url('/notebook/static/img/broken_image.svg');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    min-width: 40px;
+    min-height: 40px;
+}
 .modal-content{
     border-radius: 0;
 }
@@ -158,6 +166,7 @@ input{
 }
 #content-text img{
     max-width: 100%;
+    width: auto;
 }
 #uavaliable-mask{
     display: none;

@@ -892,7 +892,7 @@ Renderer.prototype.image = function(href, title, text) {
   if (window.markedImageParseCB !== undefined) {
     href = window.markedImageParseCB(href);
   }
-  var out = '<img src="' + href + '" alt="' + text + '"';
+  var out = '<img src="' + href + '" alt="' + text + '" onerror="this.onerror=null; this.classList.add(\'broken-image\');"';
   if (title) {
     out += ' title="' + title + '"';
   }

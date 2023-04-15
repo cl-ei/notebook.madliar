@@ -144,6 +144,8 @@ async def rm(email: str, path: str):
         shutil.rmtree(dist)
     elif os.path.isfile(dist):
         os.remove(dist)
+        if os.path.exists(f"{dist}.meta"):
+            shutil.rmtree(f"{dist}.meta")
 
 
 async def newfile(email: str, file: str):
@@ -238,6 +240,11 @@ async def _get_last_vb_of_file(file) -> Tuple[Optional[int], Optional[int]]:
         if v.version > last_version:
             last_version = v.version
     return last_version, last_base
+
+
+async def get_if_shared(email: str, file: str) -> bool:
+    shared_file = os.path.join(storage_root, email, f"{file.lstrip('/')}.meta", "share.txt")
+    return os.path.isfile(shared_file)
 
 
 async def openfile(email: str, file: str, version: int = None) -> FileOpenRespData:
@@ -409,15 +416,25 @@ async def create_share(email: str, file: str):
     return True
 
 
-async def get_share(email: str, file: str) -> str:
+async def get_share(email: str, file: str) -> Tuple[str, Union[str, bytes]]:
+    """
+
+    Returns
+    -------
+    mimetype: str, 文件类型
+    content: str or bytes, 文件内容
+    """
     rel_file_path = file.lstrip("/")
     share_meta = os.path.join(storage_root, email, f"{rel_file_path}.meta", "share.txt")
     if not os.path.exists(share_meta) or not os.path.isfile(share_meta):
         raise NotFound()
 
     dist_file = os.path.join(storage_root, email, rel_file_path)
-    if not os.path.exists(share_meta) or not os.path.isfile(share_meta):
-        raise ErrorWithPrompt("文件不存在")
+    mimetype, _ = mimetypes.guess_type(dist_file)
+    if isinstance(mimetype, str) and mimetype.startswith("image/"):
+        with open(dist_file, "rb") as f:
+            bin_content = f.read()
+        return mimetype, bin_content
 
     version, base = await _get_last_vb_of_file(dist_file)
     if version == 0:
@@ -432,7 +449,7 @@ async def get_share(email: str, file: str) -> str:
             base_content = f.read().decode("utf-8")
         content = merge_content(base_content, vf.diff)
 
-    return content
+    return mimetype or "", content
 
 
 async def get_original_file(email: str, file) -> Tuple[str, bytes]:
