@@ -381,7 +381,7 @@ $.cl = {
             jstreeInstence.select_node(curDoc.path);
             $("#input-text-area").prev().html("编辑 - " + curDoc.path);
         }else{
-            $("#input-text-area").prev().html("编辑");
+            $("#input-text-area").prev().html("编辑 - 请打开文件");
             document.getElementById('input-text-area').value = "";
         }
     },
@@ -482,7 +482,7 @@ $.cl = {
         $.cl.sendRequest({action: "open", "node_id": nodeId}, onFileOpenedResponsed, onOpenFileFailed);
     },
     shareFile: function(nodeId){
-        var onShareResponsed = function (data){
+        $.cl.sendRequest({action: "share", node_id: nodeId}, function (data){
             if (data.code !== 0){
                 var msg = "操作失败。详细信息：" + data.msg;
                 $.cl.popupMessage(msg);
@@ -493,8 +493,7 @@ $.cl = {
                 '<p>此文件的分享链接已经生成：<br />' + new_url + '<br />在新的标签页打开吗？</p>',
                 function(){window.open(new_url)}
             );
-        };
-        $.cl.sendRequest({action: "share", node_id: nodeId}, onShareResponsed)
+        })
     },
     renderJstreeContextMenu: function(node){
         var selectedNodeId = node.id;
@@ -602,9 +601,11 @@ $.cl = {
         }
         jstreeInstance.on("ready.jstree", function(){
             let curDoc = $.cl.getCurrentDoc();
-            if (curDoc.path.length > 0){
-                $.cl.openJstreeNode(curDoc.path);
+            if (curDoc.path !== undefined && curDoc.path.length > 0){
                 $.cl.openFile(curDoc.path);
+                $.cl.openJstreeNode(curDoc.path);
+            } else {
+                $.cl.openJstreeNode("/");
             }
         }).on("select_node.jstree", function (e, node){
             if (["text", "md", "img"].indexOf(node.node.type) < 0) return;
@@ -663,7 +664,7 @@ $.cl = {
     releasePageResource: function (){},
     renderUnloginPage: function (){
         $.cl.releasePageResource();
-        $("#input-text-area").prev().html("编辑");
+        $("#input-text-area").prev().html("编辑 - 请打开文件");
         var navHtml = [
             '<a href="javascript:void(0)" id="login" ><i class="fa fa-sign-in" aria-hidden="true"></i> 登录</a>',
             '<a href="javascript:void(0)" id="register" ><i class="fa fa-table" aria-hidden="true"></i> 注册</a>'
