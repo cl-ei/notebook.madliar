@@ -232,8 +232,6 @@ async def openfile(request: CustomRequest):
 
     # special logic: judge img
     mimetype, _ = mimetypes.guess_type(file)
-    logging.info(f"judge img: {mimetype}, {type(mimetype)}")
-
     if isinstance(mimetype, str) and "image/" in mimetype:
         user, service = request.email.split("@", 1)
 
