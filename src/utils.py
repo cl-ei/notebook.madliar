@@ -1,4 +1,3 @@
-import base64
 import string
 import random
 import hashlib
@@ -38,22 +37,6 @@ def get_file_type(ex_name):
         return "img"
     else:
         return "bin"
-
-
-class CustomEncode:
-    @staticmethod
-    def encode(content: str) -> str:
-        try:
-            return base64.b64encode(content.encode("utf-8")).decode("utf-8").replace("/", "_").replace("=", "-")
-        except Exception:  # noqa
-            return ""
-
-    @staticmethod
-    def decode(content: str) -> str:
-        try:
-            return base64.b64decode(content.replace("-", "=").replace("_", "/").encode("utf-8")).decode("utf-8")
-        except Exception:  # noqa
-            return ""
 
 
 def calc_md5(content: str) -> str:

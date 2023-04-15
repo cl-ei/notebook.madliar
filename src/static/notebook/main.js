@@ -1,9 +1,9 @@
 $.cl = {
     jstreeTypes: {
-        bin: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/bin.png"},
-        img: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/img.png"},
-        text: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/file.png"},
-        md: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/file.png"},
+        bin: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/bin.svg"},
+        img: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/img.svg"},
+        text: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/txt.svg"},
+        md: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/md.svg"},
         folder: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/folder.png"},
         default: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/folder.png"}
     },
@@ -83,7 +83,30 @@ $.cl = {
         window.contextData.loginInfo = {email: data.email};
         $.cl.renderLoginPage();
     },
+    saveBtnAnimationId: undefined,
+    drawSaveBtnInitState: function () {
+        if ($.cl.saveBtnAnimationId !== undefined) {
+            clearTimeout($.cl.saveBtnAnimationId);
+            $.cl.saveBtnAnimationId = undefined;
+        }
+        $("#save-btn").html('<i class="fa fa-save" aria-hidden="true"></i> 保存');
+    },
+    drawSavingAnimation: function () {
+        if ($.cl.saveBtnAnimationId !== undefined) {
+            clearTimeout($.cl.saveBtnAnimationId);
+            $.cl.saveBtnAnimationId = undefined;
+        }
+        $("#save-btn").html('<i class="fa fa-spin fa-adjust" aria-hidden="true"></i> 保存中');
+    },
+    drawSaveSuccessAnimation: function () {
+        $("#save-btn").html('<i class="fa fa-check-circle-o" aria-hidden="true"></i> 已保存');
+        if ($.cl.saveBtnAnimationId !== undefined) {
+            clearTimeout($.cl.saveBtnAnimationId);
+        }
+        $.cl.saveBtnAnimationId = setTimeout($.cl.drawSaveBtnInitState, 2500);
+    },
     onSaveContent: false,
+    lastCommitMd5: undefined,
     onOpenFile: false,
     sendRequest: function (data, callback, fallback){
         fallback = fallback || function(){$.cl.popupMessage("操作失败，请检查你的网络连接。")};
@@ -206,8 +229,12 @@ $.cl = {
         if (option.baseContent !== undefined) {
             $.cl.docBaseContent = option.baseContent;
         }
-
-        let s = $.cl.getCurrentDoc();
+    },
+    clearCurrentDoc: function () {
+        localStorage.removeItem("docPath");
+        localStorage.docVer = undefined;
+        localStorage.docBase = undefined;
+        $.cl.docBaseContent = "";
     },
 
     openJstreeNode: function (nodeId){
@@ -259,8 +286,24 @@ $.cl = {
             var onMkdirResponsed = function (data){
                 if(data.code === 0){
                     $.cl.popupMessage("创建成功！", null, 3);
-                    $("#jstree").jstree().refresh_node(nodeId);
-                    $.cl.openJstreeNode(nodeId + "/" + dirName);
+                    let jst = $("#jstree").jstree(),
+                        toOpen = (nodeId === "/" ? "" : nodeId) + "/" + dirName;
+                    jst.refresh_node(nodeId);
+
+                    function openThisNode(leftTimes) {
+                        let node = jst.get_node(toOpen);
+                        if (node === false && leftTimes > 0) {
+                            console.log("next loop");
+                            setTimeout(function (){openThisNode(leftTimes - 1)}, 100);
+                            return;
+                        }
+                        if (node.state.opened) {
+                            console.log("this node opened: ", toOpen);
+                            return;
+                        }
+                        $.cl.openJstreeNode(toOpen);
+                    }
+                    openThisNode(5);
                 }else{
                     $.cl.popupMessage("创建失败：" + data.msg);
                 }
@@ -350,17 +393,22 @@ $.cl = {
                 $.cl.popupConfirm("仅允许包含数字、字母、下划线以及汉字，不支持其它字符。请返回修改。", null, false, "名称有误");
                 return false;
             }
-            var onNewFileResponsed = function (data){
+            var onNewFileResponse = function (data){
                 if(data.code === 0){
-                    let jst = $("#jstree").jstree();
-                    $.cl.popupMessage("创建成功！", null, 3);
+                    let jst = $("#jstree").jstree(),
+                        createdFile = (nodeId === "/" ? "" : nodeId) + "/" + fileName;
+                    $.cl.popupMessage("创建成功：" + createdFile, null, 3);
                     jst.refresh_node(nodeId);
-                    $.cl.openJstreeNode(nodeId + "/" + fileName);
+
+                    let curDoc = $.cl.getCurrentDoc();
+                    if (curDoc.path === undefined || curDoc.path.length === 0) {
+                        $.cl.openFile(createdFile);
+                    }
                 }else{
                     $.cl.popupMessage("创建失败：" + data.msg);
                 }
             };
-            $.cl.sendRequest({action: "new", node_id: nodeId, file_name: fileName}, onNewFileResponsed);
+            $.cl.sendRequest({action: "new", node_id: nodeId, file_name: fileName}, onNewFileResponse);
         };
         $("#input-modal-confirm-btn").data("nodeId", nodeId).off("click").click(onConfirmBtnClicked);
         $("#input-modal-title").html("新建文件");
@@ -381,11 +429,12 @@ $.cl = {
             jstreeInstence.select_node(curDoc.path);
             $("#input-text-area").prev().html("编辑 - " + curDoc.path);
         }else{
-            $("#input-text-area").prev().html("编辑 - 请打开文件");
+            $("#input-text-area").prev().html("编辑");
             document.getElementById('input-text-area').value = "";
         }
     },
     showSaveContentDialog: function (path, content){
+        // TODO：保存新文件
         var onConfirmBtnClicked = function (){
             $("#input-modal").modal("hide");
 
@@ -429,12 +478,27 @@ $.cl = {
         }
 
         $("#input-text-area").prev().html("正在加载...");
-        var onFileOpenedResponsed = function (data){
+        var onFileOpenedResponse = function (data){
             $.cl.onOpenFile = false;
             if (data.code !== 0){
                 var msg = "操作失败。详细信息：" + data.msg;
                 $.cl.popupMessage(msg);
+                $.cl.clearCurrentDoc();
+                $.cl.renderCurrentEditDocumentTitle();
                 return ;
+            }
+            if (data.img === true) {
+                // 预览图片，渲染dom
+                var new_url = window.location.protocol + "//" + window.location.host + data.url;
+                document.getElementById('input-text-area').value = [
+                    "<img src=\"",
+                    new_url,
+                    "\" style=\"width:100%\">"
+                ].join("");
+                $.cl.clearCurrentDoc();
+                $.cl.setCurrentDoc({path: nodeId});
+                $.cl.renderCurrentEditDocumentTitle();
+                return;
             }
             let baseContent = data.base_content,
                 diff = data.diff,
@@ -458,28 +522,15 @@ $.cl = {
                 resultContents.push(baseContent.substring(index))
                 renderContent = resultContents.join("");
             }
-
             $.cl.setCurrentDoc({path: nodeId, version: data.version, base: data.base, baseContent: baseContent});
             $.cl.renderCurrentEditDocumentTitle();
-
-            if (data.img !== true){
-                document.getElementById('input-text-area').value = renderContent;
-                return;
-            }
-
-            // TODO: 预览图片，渲染dom，暂不实现
-            var new_url = window.location.protocol + "//" + window.location.host + "/notebook/" + data.key;
-            document.getElementById('input-text-area').value = [
-                "<img src=\"",
-                new_url,
-                "\" style=\"width:100%\">"
-            ].join("");
+            document.getElementById('input-text-area').value = renderContent;
         };
         var onOpenFileFailed = function (e){
             $.cl.onOpenFile = false;
             $.cl.popupMessage("操作失败，请检查你的网络连接。")
         };
-        $.cl.sendRequest({action: "open", "node_id": nodeId}, onFileOpenedResponsed, onOpenFileFailed);
+        $.cl.sendRequest({action: "open", "node_id": nodeId}, onFileOpenedResponse, onOpenFileFailed);
     },
     shareFile: function(nodeId){
         $.cl.sendRequest({action: "share", node_id: nodeId}, function (data){
@@ -608,7 +659,9 @@ $.cl = {
                 $.cl.openJstreeNode("/");
             }
         }).on("select_node.jstree", function (e, node){
-            if (["text", "md", "img"].indexOf(node.node.type) < 0) return;
+            if (["text", "md", "img"].indexOf(node.node.type) < 0) {
+                return;
+            }
             var selectedNodeId = node.node.id;
             if ($.cl.getCurrentDoc().path !== selectedNodeId){
                 $.cl.openFile(selectedNodeId);
@@ -664,7 +717,7 @@ $.cl = {
     releasePageResource: function (){},
     renderUnloginPage: function (){
         $.cl.releasePageResource();
-        $("#input-text-area").prev().html("编辑 - 请打开文件");
+        $("#input-text-area").prev().html("编辑");
         var navHtml = [
             '<a href="javascript:void(0)" id="login" ><i class="fa fa-sign-in" aria-hidden="true"></i> 登录</a>',
             '<a href="javascript:void(0)" id="register" ><i class="fa fa-table" aria-hidden="true"></i> 注册</a>'
@@ -700,6 +753,7 @@ $.cl = {
 
         let curDoc = $.cl.getCurrentDoc();
         if (curDoc.path === undefined || curDoc.length === 0) {
+            // 保存为新文件
             return;
         }
 
@@ -729,23 +783,50 @@ $.cl = {
             reqData["diff"] = postDiff;
         }
 
-        $.cl.clearMessage();
+        // 发送请求之前检查是否重复请求
+        // 1. 禁止并发，检查是否在请求中
+        // 2. 判断内容是否重复
+        // 3. 绘制按钮
+        if ($.cl.onSaveContent === true) {
+            console.log("on saving")
+            return;
+        }
+        if (reqData.range === "delta" && reqData.dist_md5 === $.cl.lastCommitMd5) {
+            console.log("old content")
+            $.cl.drawSaveSuccessAnimation();
+            return;
+        }
+        $.cl.onSaveContent = true;
+        $.cl.drawSavingAnimation();
+
         $.cl.sendRequest(reqData, function (data) {
             // 保存成功后进入此
+            $.cl.onSaveContent = false;
+
+            // failed
             if (data.code !== 0){
                 $.cl.popupMessage("操作失败。详细信息：" + data.msg);
+                $.cl.drawSaveBtnInitState();
                 return ;
             }
-            $.cl.popupMessage("保存成功！", null, 2)
-            let curDoc = $.cl.getCurrentDoc();
-            console.log("data.base: ", data.base);
-            console.log("curDoc.base: ", curDoc.base);
 
+            // success
+            $.cl.drawSaveSuccessAnimation();
+            if (reqData.range === "delta") {
+                $.cl.lastCommitMd5 = reqData.dist_md5;
+            }
+
+            let curDoc = $.cl.getCurrentDoc();
             if (data.base === curDoc.base) {
                 $.cl.setCurrentDoc({version: data.version})
             } else {
                 $.cl.setCurrentDoc({version: data.version, base: data.base, baseContent: content})
             }
+        }, function (resp) {
+            // 保存失败进入此
+            $.cl.onSaveContent = false;
+            $.cl.drawSaveBtnInitState();
+            $.cl.popupMessage(resp.msg || "保存失败");
         });
 
         return;

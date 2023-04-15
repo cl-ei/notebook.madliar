@@ -404,7 +404,7 @@ class GlobalLock:
             name: str,
             lock_time: int = 5,
             try_times: int = 3,
-            _retry_interval: float = 0.1
+            _retry_interval: float = 0.3
     ):
         self.redis = redis
         self.key = f"{self.key_prefix}:{name}"

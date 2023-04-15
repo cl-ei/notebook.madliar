@@ -1,9 +1,15 @@
+import asyncio
+import logging
+import mimetypes
 import re
 import os
+import time
+
 from pydantic import BaseModel
 from typing import *
 from fastapi import UploadFile
 from fastapi.responses import JSONResponse
+from src.db.client.my_redis import GlobalLock, redis_client
 from src.db.query.auth import AuthMgr
 from src.error import ErrorWithPrompt
 from src.operation import data_io
@@ -218,25 +224,26 @@ async def openfile(request: CustomRequest):
             base: int, 保存之后的 base
             version: int, 保存之后的版本号
     """
-    file = request.body.get("node_id")
+    file: str = request.body.get("node_id")
     try:
         version = request.body.get("version")
     except (ValueError, TypeError):
         version = None
 
     # special logic: judge img
-    path, inner = os.path.split(file)
-    if "." in inner:
-        ext = inner.split(".")[-1]
-        if utils.get_file_type(ext) == "img":
-            # TODO: add shared key
-            shared_key = ""
-            return {
-                "err_code": 0,
-                "key": shared_key,
-                "bin": True,
-                "path": file
-            }
+    mimetype, _ = mimetypes.guess_type(file)
+    logging.info(f"judge img: {mimetype}, {type(mimetype)}")
+
+    if isinstance(mimetype, str) and "image/" in mimetype:
+        user, service = request.email.split("@", 1)
+
+        img_url = f"/notebook/img_preview/{user}/{service}/{file.lstrip('/')}"
+        return {
+            "code": 0,
+            "img": True,
+            "url": img_url,
+            "path": file
+        }
 
     fr: data_io.FileOpenRespData = await data_io.openfile(request.email, file, version)
     resp_dict = fr.dict()
@@ -248,33 +255,37 @@ async def openfile(request: CustomRequest):
 async def save(request: CustomRequest):
     file = request.body.get("node_id")
     save_range = request.body.get("range")
-    if save_range == "all":
-        content = request.body.get("content")
-        version, base = await data_io.savefile(request.email, file, content)
 
-    elif save_range == "delta":
-        try:
-            base: int = int(request.body.get("base"))
-        except (ValueError, TypeError):
-            raise ErrorWithPrompt("错误的base")
-        dist_md5: str = request.body.get("dist_md5", "")
-        diff = [data_io.DiffItem(**d) for d in request.body.get("diff", [])]
-        version, base = await data_io.savefile_delta(request.email, file, base, dist_md5, diff)
+    lock_key = f"LK:save:{request.email}:{utils.calc_md5(file)}"
+    async with GlobalLock(redis_client, name=lock_key, lock_time=600) as lock:
+        if not lock.locked:
+            raise ErrorWithPrompt("访问频繁，请稍后再试")
 
-    else:
-        raise ErrorWithPrompt("不支持此保存方式")
+        if save_range == "all":
+            content = request.body.get("content")
+            version, base = await data_io.savefile(request.email, file, content)
+
+        elif save_range == "delta":
+            try:
+                base: int = int(request.body.get("base"))
+            except (ValueError, TypeError):
+                raise ErrorWithPrompt("错误的base")
+            dist_md5: str = request.body.get("dist_md5", "")
+            diff = [data_io.DiffItem(**d) for d in request.body.get("diff", [])]
+            version, base = await data_io.savefile_delta(request.email, file, base, dist_md5, diff)
+
+        else:
+            raise ErrorWithPrompt("不支持此保存方式")
 
     return {"code": 0, "version": version, "base": base}
 
 
 @SupportedAction(action="share", login_required=True)
 async def share(request: CustomRequest):
-    file = request.body.get("node_id")
+    file: str = request.body.get("node_id")
     await data_io.create_share(request.email, file=file)
     user, service = request.email.split("@", 1)
-    service_enc = utils.CustomEncode.encode(service)
-    file_enc = utils.CustomEncode.encode(file)
-    return {"code": 0, "key": f"/notebook/share/{user}.{service_enc}/{file_enc}"}
+    return {"code": 0, "key": f"/notebook/share/{user}/{service}/{file.lstrip('/')}"}
 
 
 @SupportedAction(action="upload_file", login_required=True)

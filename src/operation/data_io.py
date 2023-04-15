@@ -1,6 +1,6 @@
 import datetime
 import json
-import logging
+import mimetypes
 import os
 import shutil
 from pydantic import BaseModel
@@ -46,6 +46,22 @@ class FileOpenRespData(BaseModel):
     base: int
     base_content: str
     diff: List[DiffItem] = []
+
+
+def merge_content(base_content: str, diff: List) -> str:
+    result = []
+    index = 0
+    for d in diff:
+        if d.added is True:
+            result.append(d.value)
+        elif d.removed is True:
+            index += d.count
+        else:
+            result.append(base_content[index: index + d.count])
+            index += d.count
+    result.append(base_content[index:])
+    target_content = "".join(result)
+    return target_content
 
 
 async def mkdir(email: str, path: str):
@@ -236,12 +252,19 @@ async def savefile(email: str, file: str, content: Union[str, bytes], create=Fal
         bin_content = content
 
     dist = os.path.join(storage_root, email, file.lstrip("/"))
+    meta_path = f"{dist}.meta"
     if not os.path.exists(dist) or not os.path.isfile(dist):
         if not create:
             raise ErrorWithPrompt("文件不存在")
 
+        # 创建新文件。只有 upload 接口才会触发至此，未创建就保存文件。此时应当清除 meta 文件夹
         parent, _ = os.path.split(dist)
         os.makedirs(parent, exist_ok=True)
+        with open(dist, "wb") as f:
+            f.write(bin_content)
+        if os.path.exists(meta_path):
+            shutil.rmtree(meta_path)
+        return 0, 0
 
     # 创建
     # 寻找最新版本
@@ -249,7 +272,6 @@ async def savefile(email: str, file: str, content: Union[str, bytes], create=Fal
     target_version, target_base = last_version + 1, last_base + 1
 
     # 创建base
-    meta_path = f"{dist}.meta"
     os.makedirs(meta_path, exist_ok=True)
     with open(os.path.join(meta_path, f"b{target_base}"), "wb") as f:
         f.write(bin_content)
@@ -277,7 +299,7 @@ async def savefile_delta(email: str, path: str, base: int, dist_md5: str, diff: 
     Returns
     -------
     version: int 版本号
-    base: int
+    base: int, rebuild 之后的 base
     """
     file = os.path.join(storage_root, email, path.lstrip("/"))
     meta_path = os.path.join(f"{file}.meta")
@@ -291,30 +313,37 @@ async def savefile_delta(email: str, path: str, base: int, dist_md5: str, diff: 
     except UnicodeDecodeError:
         raise ErrorWithPrompt("文件编码错误")
 
-    result = []
-    index = 0
-    for d in diff:
-        if d.added is True:
-            result.append(d.value)
-        elif d.removed is True:
-            index += d.count
-        else:
-            result.append(content[index: index + d.count])
-            index += d.count
-    result.append(content[index:])
-    result_md5 = utils.calc_md5("".join(result))
+    target_content = merge_content(content, diff)
+    result_md5 = utils.calc_md5(target_content)
     if result_md5 != dist_md5:
-        print(f"result: {result}, {result_md5}, d>{dist_md5}<, content: {content}, diff: {diff}")
         raise ErrorWithPrompt("文件不一致")
 
     version, max_base = await _get_last_vb_of_file(file)
     target_version = version + 1
-    # TODO: judge and rebuild base
-    vf = VersionFile(base=base, diff=diff, create_time=f"{datetime.datetime.now()}")
     os.makedirs(meta_path, exist_ok=True)
+    if (
+        (target_version > 0 and target_version % 10 == 0) or
+        len(diff) > 10 or
+        sum([d.count for d in diff if d.added is True or d.removed is True]) > 512
+    ):
+        # rebuild base
+        target_base = target_version
+
+        # save base file
+        target_base_file = os.path.join(meta_path, f"b{target_base}")
+        os.makedirs(meta_path, exist_ok=True)
+        with open(target_base_file, "wb") as f:
+            f.write(target_content.encode("utf-8"))
+        # save version file
+        vf = VersionFile(base=target_base, diff=[], create_time=f"{datetime.datetime.now()}")
+
+    else:
+        target_base = base
+        vf = VersionFile(base=base, diff=diff, create_time=f"{datetime.datetime.now()}")
+
     with open(os.path.join(meta_path, f"v{target_version}"), "wb") as f:
         f.write(json.dumps(vf.dict()).encode("utf-8"))
-    return target_version, base
+    return target_version, target_base
 
 
 async def create_share(email: str, file: str):
@@ -340,6 +369,29 @@ async def get_share(email: str, file: str) -> str:
     dist_file = os.path.join(storage_root, email, rel_file_path)
     if not os.path.exists(share_meta) or not os.path.isfile(share_meta):
         raise ErrorWithPrompt("文件不存在")
+
+    version, base = await _get_last_vb_of_file(dist_file)
+    if version == 0:
+        with open(dist_file, "rb") as f:
+            content = f.read().decode("utf-8")
+    else:
+        version_file = os.path.join(f"{dist_file}.meta", f"v{version}")
+        with open(version_file, "rb") as f:
+            vf = VersionFile(**json.loads(f.read()))
+        base_file = dist_file if vf.base == 0 else os.path.join(f"{dist_file}.meta", f"b{base}")
+        with open(base_file, "rb") as f:
+            base_content = f.read().decode("utf-8")
+        content = merge_content(base_content, vf.diff)
+
+    return content
+
+
+async def get_original_file(email: str, file) -> Tuple[str, bytes]:
+    dist_file = os.path.join(storage_root, email, file)
+    if not os.path.isfile(dist_file):
+        raise ErrorWithPrompt("文件不存在")
+
+    mimetype, _ = mimetypes.guess_type(dist_file)
     with open(dist_file, "rb") as f:
-        content = f.read()
-    return content.decode("utf-8")
+        bin_content = f.read()
+    return mimetype, bin_content
