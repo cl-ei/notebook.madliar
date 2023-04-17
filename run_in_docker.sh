@@ -9,5 +9,5 @@ docker run -itd \
   --restart=always \
   --name ${DOCKER_NAME} \
   --net=host \
-  -v /data/nvme/notebook_user:/data/notebook_user \
+  -v /data/nvme/notebook_user:/data/storage \
   ${DOCKER_IMAGE}
