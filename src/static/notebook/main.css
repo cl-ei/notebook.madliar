@@ -67,6 +67,14 @@ input{
     max-height: calc(100% - 80px);
     border-right: 1px solid #ddd;
 }
+.history-list{
+    padding: 10px;
+}
+.history-list ul{
+    padding-left: 0;
+    width: fit-content;
+    margin: auto;
+}
 .history-left-part{
     width: 35%;
     position: absolute;

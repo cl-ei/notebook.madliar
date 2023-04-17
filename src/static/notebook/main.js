@@ -927,12 +927,14 @@ $.cl = {
                 ];
             for (let i = 0; i < diffChars.length; i++){
                 let d = diffChars[i];
+                let encodedStr = document.createElement('div').appendChild(document.createTextNode(d.value)).parentNode.innerHTML;
+
                 if (d.removed === true) {
-                    renderHtml.push('<span style="text-decoration: line-through;background-color: #ffd0d4">' + d.value + '</span>');
+                    renderHtml.push('<span style="text-decoration: line-through;background-color: #ffd0d4">' + encodedStr + '</span>');
                 } else if (d.added === true) {
-                    renderHtml.push('<span style="color: #3c744a; background-color: #b6ecbf">' + d.value + '</span>');
+                    renderHtml.push('<span style="color: #3c744a; background-color: #b6ecbf">' + encodedStr + '</span>');
                 } else {
-                    renderHtml.push(d.value)
+                    renderHtml.push(encodedStr)
                 }
             }
             $(".history-view-body").html(renderHtml.join(""));
@@ -965,7 +967,8 @@ $.cl = {
                 $.cl.popupMessage(resp.msg);
                 return;
             }
-            if (resp.history.length === 0) {
+            if (resp.history.length === 0){
+                $(".history-list").html("已为最新版本，无历史");
                 return;
             }
             let historyHtml = [];
