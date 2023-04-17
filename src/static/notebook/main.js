@@ -12,9 +12,72 @@ $.cl = {
             $("#browser-prompt, #nav, #content").css({"display": "none"});
             $("#uavaliable-mask").css({"display": "block"});
         }else{
+            let splitLineWidth = 6,
+                treeW = parseFloat($("#folder-tree").css("width").replace("px", "")),
+                editW = parseFloat($("#input-area").css("width").replace("px", ""));
+            let showW = document.body.offsetWidth - splitLineWidth*2 - treeW - editW;
+            $("#content-area").css({width: showW + 'px'});
             $("#nav, #content").css({"display": "block"});
             $("#browser-prompt, #uavaliable-mask").css({"display": "none"});
             $.cl.compatibilityChecking();
+        }
+    },
+    initPageSplitWidth: function () {
+        let windowWidth = document.body.offsetWidth,
+            splitLineWidth = 6;
+        let treeW = Math.max(windowWidth*0.2, 220);
+        let contentW = (windowWidth - treeW - splitLineWidth*2) / 2;
+        $("#folder-tree").css({width: treeW + "px"});
+        $("#input-area").css({width: contentW + "px"});
+        $("#content-area").css({width: contentW + "px"});
+
+        $.cl.setSplitLineAction();
+    },
+    setSplitLineAction: function () {
+        let lSpLine = document.getElementById('left-split-line'),
+            rSpLine = document.getElementById('right-split-line'),
+            startX = 0,
+            startWidth = 0,
+            leftDown,
+            ldOrigin,
+            rdOrigin;
+
+        lSpLine.addEventListener('mousedown', (event) => {onMouseDown(event, true)});
+        rSpLine.addEventListener('mousedown', (event) => {onMouseDown(event, false)});
+
+        function onMouseDown(event, isLeftBar) {
+            console.log("this event!", event, ", isLeftBar: ", isLeftBar);
+            leftDown = isLeftBar;
+            startX = event.clientX;
+            startWidth = parseInt(document.defaultView.getComputedStyle(isLeftBar === true ? lSpLine : rSpLine).width, 10);
+            ldOrigin = parseFloat($(isLeftBar ? "#folder-tree" : "#input-area").css("width").replace("px", ""));
+            rdOrigin = parseFloat($(isLeftBar ? "#input-area" : "#content-area").css("width").replace("px", ""));
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        }
+
+        function onMouseMove(event) {
+            let width = startWidth + event.clientX - startX;
+            let lD, rD;
+            if (leftDown) {
+                lD = $("#folder-tree");
+                rD = $("#input-area");
+            } else {
+                lD = $("#input-area");
+                rD = $("#content-area");
+            }
+            let lW = ldOrigin + width,
+                rW = rdOrigin - width;
+            if (lW < 100 || rW < 100){
+                return;
+            }
+            lD.css({width: lW + 'px'});
+            rD.css({width: rW + 'px'});
+        }
+
+        function onMouseUp(event) {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
         }
     },
     popupedMessageBoxId: undefined,
@@ -701,10 +764,12 @@ $.cl = {
         $("#change-passwd").off("click").click($.cl.showChangePasswordDialog);
 
         var leftNavHtml = [
-            '<a href="javascript:void(0)" id="save-btn"><i class="fa fa-save" aria-hidden="true"></i> 保存</a>'
+            '<a href="javascript:void(0)" id="save-btn"><i class="fa fa-save" aria-hidden="true"></i> 保存</a>',
+            '<a href="javascript:void(0)" id="history-btn"><i class="fa fa-history" aria-hidden="true"></i> 历史</a>'
         ].join("");
         $("#top-dynamic-nav").html(leftNavHtml);
         $("#save-btn").off("click").click($.cl.saveContent);
+        $("#history-btn").off("click").click($.cl.selectHistory);
         $.cl.getAndRenderLoginedFileListAndPage();
         document.getElementById("jstree").addEventListener("drop", $.cl.onDropFileToJsTree, false);
         document.getElementById("input-text-area").addEventListener("drop", $.cl.onDropFileToJsTree, false);
@@ -837,6 +902,9 @@ $.cl = {
         $.cl.showSaveContentDialog(path, content);
         */
     },
+    selectHistory: function () {
+        $.cl.popupMessage("hello!");
+    },
     daemonToTransMdId: undefined,
     oldContent: undefined,
     daemonToTransMd: function (){
@@ -954,21 +1022,12 @@ $.cl = {
     },
     initPage: function (){
         $.cl.compatibilityChecking();
+        $.cl.initPageSplitWidth();
         (window.contextData.loginInfo && window.contextData.loginInfo.email ? $.cl.renderLoginPage : $.cl.renderUnloginPage)();
         $("input[name=password]").on('keyup', function(e){if(e.key === "Enter"){$("#login-btn").trigger("click")}});
         if ($.cl.daemonToTransMdId){
             clearInterval($.cl.daemonToTransMdId);
         }
-        $("#jstree-outdent").off("click").click(function(){
-            $("#folder-tree").fadeOut(0);
-            $("#show-folder-tree").fadeIn(0);
-            $("#sub-content").addClass("sub-content-full-screen");
-        });
-        $("#show-folder-tree").off("click").click(function(){
-            $("#folder-tree").fadeIn(0);
-            $("#show-folder-tree").fadeOut(0);
-            $("#sub-content").removeClass("sub-content-full-screen");
-        });
         $("#file-input").change(function(){
             var file = $(this)[0].files[0],
                 path = $(this).data("path");

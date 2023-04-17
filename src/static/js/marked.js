@@ -892,7 +892,17 @@ Renderer.prototype.image = function(href, title, text) {
   if (window.markedImageParseCB !== undefined) {
     href = window.markedImageParseCB(href);
   }
-  var out = '<img src="' + href + '" alt="' + text + '" onerror="this.onerror=null; this.classList.add(\'broken-image\');"';
+  let regex = /style=\{(.*?)\}/;
+  let match = text.match(regex);
+  let styleValue = match ? match[1] : undefined;
+  if (styleValue !== undefined) {
+    text = text.replace(regex, "")
+  }
+  var out = '<img src="' + href + '" alt="' + text + '"';
+  out += ' onerror="this.onerror=null; this.classList.add(\'broken-image\');"';
+  if (styleValue) {
+    out += ' style="' + styleValue + '"';
+  }
   if (title) {
     out += ' title="' + title + '"';
   }

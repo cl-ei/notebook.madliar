@@ -150,13 +150,12 @@ input{
 #content-area{
     background: white;
     float: left;
-    height: calc(100% - 20px);
-    width: calc(50% - 30px);
+    height: 100%;
+    width: 220px;
     overflow: hidden;
-    margin: 22px 20px 0 0;
-    padding: 0 5px 20px 10px;
     word-wrap: break-word;
-    box-shadow: 4px 4px 20px 0 rgba(0, 0, 0, 0.15);
+    box-shadow: 4px 4px 20px 0 rgb(0 0 0 / 15%);
+    padding: 0 15px 0 0;
 }
 #content-text{
     width: 100%;
@@ -195,16 +194,25 @@ input{
 }
 #folder-tree{
     display: block;
-    height: fit-content;
     float: left;
-    margin: 20px 10px 0 0;
+    height: 100%;
+    width: 220px;
+    background: white;
+    padding: 10px;
+}
+.split-line{
+    height: 100%;
+    display: block;
+    width: 6px;
+    float: left;
+    background: #ccc;
+    cursor: ew-resize;
 }
 #input-area{
     float: left;
     width: 50%;
-    margin: 22px 10px 0 0;
-    height: calc(100% - 20px);
-    box-shadow: -4px 5px 20px 7px rgba(0, 0, 0, 0.15);
+    height: 100%;
+    box-shadow: -4px 5px 20px 7px rgb(0 0 0 / 15%);
     background: white;
 }
 #nav a{
@@ -225,17 +233,7 @@ input{
     margin-top: 25px;
     border-top: 1px solid;
 }
-#jstree-outdent{
-    display: block;
-    height: 20px;
-    float: right;
-    text-align: right;
-    cursor: pointer;
-    transition: all 0.3s;
-}
-#jstree-outdent:hover{
-    border-bottom: .1em solid;
-}
+
 #show-folder-tree{
     display: none;
     width: 20px;
@@ -264,30 +262,4 @@ input{
 #input-modal .modal-body p{
     text-align: left;
     word-wrap: break-word;
-}
-@media (max-width: 9999px) {
-    #folder-tree {
-        width: 220px;
-        margin-top: 22px;
-        height: calc(100% - 40px);
-        background: white;
-        box-shadow: -4px 5px 20px 7px rgba(0, 0, 0, 0.15);
-        padding: 10px;
-    }
-    #sub-content{
-        width: calc(100% - 240px);
-    }
-}
-@media (max-width: 900px) {
-    #folder-tree {
-        width: 130px;
-    }
-    #sub-content{
-        width: calc(100% - 150px);
-    }
-}
-@media (max-width: 600px) {
-    #folder-tree {
-        width: 0;
-    }
 }
