@@ -27,12 +27,22 @@
     $(function(){
         if (window.markedImageParseCB === undefined) {
             window.markedImageParseCB = (href) => {
+                let availPrefix = [
+                    "http://",
+                    "https://",
+                    "/notebook/img_preview/",
+                    "/notebook/share/",
+                ]
+                for (let i = 0; i < availPrefix.length; i++){
+                    if (href.indexOf(availPrefix[i]) === 0) {
+                        return href
+                    }
+                }
+
                 let em = window.location.pathname.substring("/notebook/share/".length).split("/", 2);
                 let username = em[0],
                     service = em[1];
-                if (href.substring(0, "/notebook/img_preview/".length) === "/notebook/img_preview/") {
-                    return href;
-                } else if (href[0] === "/") {
+                if (href[0] === "/") {
                     return "/notebook/img_preview/" + username + "/" + service + href;
                 } else {
                     let relPath = window.location.pathname.substring(("/notebook/share/" + username + "/" + service).length);

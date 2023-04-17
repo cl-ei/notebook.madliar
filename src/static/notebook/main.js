@@ -424,20 +424,20 @@ $.cl = {
                 $.cl.popupConfirm("仅允许包含数字、字母、下划线以及汉字，不支持其它字符。请返回修改。", null, false, "名称有误");
                 return false;
             }
-            var onRenameResponsed = function (data){
+            var onRenameResponse = function (data){
                 if(data.code === 0){
                     $.cl.popupMessage("重命名成功！", null, 3);
                     var nodePath = nodeId.split("/").slice(0, -1).join("/") || "/";
                     $("#jstree").jstree().refresh_node(nodePath);
                     if (nodeId === $.cl.getCurrentDoc().path){
-                        $.cl.setCurrentDoc({path: nodePath + "/" + dirName})
+                        $.cl.setCurrentDoc({path: (nodePath === "/" ? "" : nodePath) + "/" + dirName})
                         $.cl.renderCurrentEditDocumentTitle();
                     }
                 }else{
                     $.cl.popupMessage("重命名失败：" + data.msg);
                 }
             };
-            $.cl.sendRequest({action: "rename", node_id: nodeId, new_name: dirName}, onRenameResponsed);
+            $.cl.sendRequest({action: "rename", node_id: nodeId, new_name: dirName}, onRenameResponse);
         };
         $("#input-modal-confirm-btn").data("nodeId", nodeId).off("click").click(onConfirmBtnClicked);
         $("#input-modal-title").html(isdir ? "重命名文件夹" : "重命名文件");
@@ -1112,16 +1112,26 @@ $.cl = {
         $.cl.daemonToTransMdId = $.cl.daemonToTransMd();
         if (window.markedImageParseCB === undefined) {
             window.markedImageParseCB = (href) => {
+                let availPrefix = [
+                    "http://",
+                    "https://",
+                    "/notebook/img_preview/",
+                    "/notebook/share/",
+                ]
+                for (let i = 0; i < availPrefix.length; i++){
+                    if (href.indexOf(availPrefix[i]) === 0) {
+                        return href
+                    }
+                }
                 let username = window.contextData.loginInfo.email.split("@", 1);
                 let service = window.contextData.loginInfo.email.substring(username.length + 1);
-                if (href.substring(0, "/notebook/img_preview/".length) === "/notebook/img_preview/") {
-                    return href;
-                } else if (href[0] === "/") {
+                if (href[0] === "/") {
                     return "/notebook/img_preview/" + username + "/" + service + href;
                 } else {
                     let curDoc = $.cl.getCurrentDoc();
                     let index = curDoc.path.lastIndexOf("/");
                     let parentPath = curDoc.path.slice(0, index);
+                    console.log("parentPath: ", parentPath);
                     return "/notebook/img_preview/" + username + "/" + service + parentPath + "/" + href;
                 }
             }

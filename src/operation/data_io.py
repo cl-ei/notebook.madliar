@@ -175,6 +175,11 @@ async def rename(email: str, old_path: str, new_name: str):
     new_path = os.path.join(path, new_name)
     os.rename(dist, new_path)
 
+    # 重命名meta
+    logging.info(f"rename {dist}.meta => {new_path}.meta")
+    if os.path.isfile(new_path) and os.path.isdir(f"{dist}.meta"):
+        os.rename(f"{dist}.meta", f"{new_path}.meta")
+
 
 async def _get_file_by_version(file: str, version: int) -> FileOpenRespData:
     """
