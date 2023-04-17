@@ -294,3 +294,23 @@ async def upload_file(request: CustomRequest):
     content: bytes = await request.file.read(1024*1024*5)
     await data_io.savefile(request.email, savefile, content, create=True)
     return {"code": 0}
+
+
+@SupportedAction(action="history", login_required=True)
+async def get_history(request: CustomRequest):
+    path: str = request.body.get("node_id")
+    history = await data_io.get_history(email=request.email, file=path)
+    return {"code": 0, "history": history}
+
+
+@SupportedAction(action="diff", login_required=True)
+async def get_history(request: CustomRequest):
+    path: str = request.body.get("node_id")
+    version: int = request.body.get("version")
+    if version < 1:
+        raise ErrorWithPrompt("无更新版本")
+
+    history = await data_io.get_diff(email=request.email, file=path, version=version)
+    resp = history.dict()
+    resp["code"] = 0
+    return resp

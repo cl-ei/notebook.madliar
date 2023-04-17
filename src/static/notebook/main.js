@@ -7,6 +7,7 @@ $.cl = {
         folder: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/folder.png"},
         default: {icon: (window.CDN_URL || "") + "/notebook/static/img/jstree/folder.png"}
     },
+    preventDefault: function (e){e.preventDefault()},
     windowSizeMonitor: function (){
         if(document.documentElement.clientWidth < 605){
             $("#browser-prompt, #nav, #content").css({"display": "none"});
@@ -902,8 +903,80 @@ $.cl = {
         $.cl.showSaveContentDialog(path, content);
         */
     },
+    showHistoryBusy: false,
+    showHistoryDiff: function () {
+        if ($.cl.showHistoryBusy === true) {
+            console.log("showHistoryBusy busy");
+            return;
+        }
+        $.cl.showHistoryBusy = true;
+
+        $(".history-item").removeClass("history-item-selected");
+        $(this).addClass("history-item-selected");
+
+        let curDoc = $.cl.getCurrentDoc(),
+            version = $(this).data("version");
+        $.cl.sendRequest({action: "diff", "node_id": curDoc.path, version: version}, function (resp) {
+            $.cl.showHistoryBusy = false;
+
+            let diffChars = Diff.diffChars(resp.last_content, resp.current_content),
+                renderHtml = [
+                    '<div class="history-revert clickable">' +
+                    '<i class="fa fa-undo" aria-hidden="true"></i> 恢复此版本' +
+                    '</div>'
+                ];
+            for (let i = 0; i < diffChars.length; i++){
+                let d = diffChars[i];
+                if (d.removed === true) {
+                    renderHtml.push('<span style="text-decoration: line-through;background-color: #ffd0d4">' + d.value + '</span>');
+                } else if (d.added === true) {
+                    renderHtml.push('<span style="color: #3c744a; background-color: #b6ecbf">' + d.value + '</span>');
+                } else {
+                    renderHtml.push(d.value)
+                }
+            }
+            $(".history-view-body").html(renderHtml.join(""));
+            $(".history-revert").off("click").click(function (){
+                document.getElementById('input-text-area').value = resp.current_content;
+                $("#close-history-window").trigger("click");
+
+                // clear old context
+                $(".history-view-body").html("请在左侧选择一个版本查看差异。")
+            });
+        }, function () {
+            $.cl.showHistoryBusy = false;
+        });
+    },
     selectHistory: function () {
-        $.cl.popupMessage("hello!");
+        let curDoc = $.cl.getCurrentDoc();
+        if (curDoc.path === undefined || curDoc.path.length === 0) {
+            $.cl.popupMessage("请打开一个文本文件来查看历史");
+            return;
+        }
+
+        let historyWindow = $(".history-window");
+        $("#close-history-window").off("click").click(function (){historyWindow.fadeOut(250)});
+        historyWindow.fadeIn(250);
+        // 发送请求，获取历史记录
+
+        $.cl.sendRequest({action: "history", "node_id": curDoc.path}, function (resp) {
+            // 渲染dom
+            if (resp.code !== 0) {
+                $.cl.popupMessage(resp.msg);
+                return;
+            }
+            if (resp.history.length === 0) {
+                return;
+            }
+            let historyHtml = [];
+            for (let i = 0; i < resp.history.length; i++) {
+                let h = resp.history[i];
+                historyHtml.push('<li class="clickable history-item" data-version="' + h.version
+                    + '">[' + h.create_time + '] 版本' + h.version + ', ' + h.lines + '处差异</li>')
+            }
+            $(".history-list").html('<ul>' + historyHtml.join('') + '</ul>');
+            $(".history-item").off("click").click($.cl.showHistoryDiff);
+        })
     },
     daemonToTransMdId: undefined,
     oldContent: undefined,
@@ -1082,7 +1155,6 @@ $.cl = {
             }
         })
     },
-    preventDefault: function (e){e.preventDefault()}
 };
 
 $(window).resize($.cl.windowSizeMonitor).on("ready", $.cl.windowSizeMonitor);

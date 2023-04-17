@@ -4,6 +4,7 @@ import hashlib
 from jinja2 import Template
 from typing import *
 from fastapi.responses import HTMLResponse
+from src.config import DEBUG
 
 
 def randstr(byte_len: int = 32):
@@ -16,7 +17,7 @@ class TPLCache:
 
 
 def render_to_html(tpl: str, context: Dict = None) -> HTMLResponse:
-    if tpl in TPLCache.templates:
+    if not DEBUG and tpl in TPLCache.templates:
         template = TPLCache.templates[tpl]
     else:
         with open(tpl, "rb") as f:

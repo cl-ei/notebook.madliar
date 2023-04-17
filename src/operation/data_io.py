@@ -87,6 +87,13 @@ class FileOpenRespData(RWModel):
     diff: List[DiffItem] = []
 
 
+class DiffResp(RWModel):
+    last_version: int
+    last_content: str
+    current_version: int
+    current_content: str
+
+
 def merge_content(base_content: str, diff: List) -> str:
     result = []
     index = 0
@@ -452,7 +459,7 @@ async def get_share(email: str, file: str) -> Tuple[str, Union[str, bytes]]:
     return mimetype or "", content
 
 
-async def get_original_file(email: str, file) -> Tuple[str, bytes]:
+async def get_original_file(email: str, file: str) -> Tuple[str, bytes]:
     dist_file = os.path.join(storage_root, email, file)
     if not os.path.isfile(dist_file):
         raise NotFound()
@@ -461,3 +468,42 @@ async def get_original_file(email: str, file) -> Tuple[str, bytes]:
     with open(dist_file, "rb") as f:
         bin_content = f.read()
     return mimetype, bin_content
+
+
+async def get_history(email: str, file: str) -> List[VersionBrief]:
+    index_file = os.path.join(storage_root, email, f"{file.lstrip('/')}.meta", "index.json")
+    try:
+        data: IndexFile = IndexFile.parse_file(index_file)
+    except FileNotFoundError:
+        raise ErrorWithPrompt("没有版本历史")
+    return sorted(data.versions, key=lambda x: x.version, reverse=True)
+
+
+async def get_diff(email: str, file: str, version: int) -> DiffResp:
+    dist_file = os.path.join(storage_root, email, file.lstrip("/"))
+    meta_path = f"{dist_file}.meta"
+    index_file = os.path.join(meta_path, "index.json")
+    index_data: IndexFile = IndexFile.parse_file(index_file)
+
+    version_map: Dict[int, VersionBrief] = {v.version: v for v in index_data.versions}
+    # 寻找比当前版本稍小一个版本的 version 和 base
+    last_version = version - 1
+    while last_version > 0:
+        if last_version in version_map:
+            break
+        last_version -= 1
+
+    # 读取旧文件
+    r = await _get_file_by_version(dist_file, last_version)
+    last_content = merge_content(r.base_content, r.diff)
+
+    # 读取新文件
+    r = await _get_file_by_version(dist_file, version)
+    cur_content = merge_content(r.base_content, r.diff)
+
+    return DiffResp(
+        last_version=last_version,
+        last_content=last_content,
+        current_version=version,
+        current_content=cur_content,
+    )
