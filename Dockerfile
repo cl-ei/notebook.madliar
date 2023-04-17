@@ -9,7 +9,7 @@ RUN echo 'export LANG="C.UTF-8"' >> /etc/profile
 ENV RUN_ENV prod
 WORKDIR /app
 COPY requirements.txt ./
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 COPY . ./
 
