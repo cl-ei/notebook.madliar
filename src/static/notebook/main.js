@@ -689,8 +689,8 @@ $.cl = {
                     text: "游客的文件夹",
                     state: {opened: true},
                     children: [{
-                        text: "简介",
-                        type: "text",
+                        text: "README.md",
+                        type: "md",
                         state: {opened: true, selected: true}
                     }]
                 }]
@@ -1117,6 +1117,7 @@ $.cl = {
                     "https://",
                     "/notebook/img_preview/",
                     "/notebook/share/",
+                    "/notebook/static/",
                 ]
                 for (let i = 0; i < availPrefix.length; i++){
                     if (href.indexOf(availPrefix[i]) === 0) {
