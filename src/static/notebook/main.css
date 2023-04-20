@@ -35,6 +35,9 @@ input{
     padding-left: 10px;
     outline: none;
 }
+p{
+    display: inline-block;
+}
 .clickable {
     display: block;
     width: fit-content;
