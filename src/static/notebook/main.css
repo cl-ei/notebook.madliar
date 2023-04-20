@@ -38,6 +38,9 @@ input{
 p{
     display: inline-block;
 }
+img{
+    display: block;
+}
 .clickable {
     display: block;
     width: fit-content;
