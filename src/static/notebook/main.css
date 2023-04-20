@@ -113,12 +113,12 @@ input{
     margin-bottom: 30px;
 }
 .broken-image {
-    background-image: url('/notebook/static/img/broken_image.svg');
+    background-image: url('/notebook/static/img/broken_img.jpg');
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
-    min-width: 40px;
-    min-height: 40px;
+    min-width: 25px;
+    min-height: 25px;
 }
 .modal-content{
     border-radius: 0;

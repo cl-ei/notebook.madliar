@@ -21,12 +21,12 @@ h1, h2, h3 {
     width: auto;
 }
 .broken-image {
-    background-image: url('/notebook/static/img/broken_image.svg');
+    background-image: url('/notebook/static/img/broken_img.jpg');
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
-    min-width: 40px;
-    min-height: 40px;
+    min-width: 25px;
+    min-height: 25px;
 }
 .keep-space {
     white-space: pre;
