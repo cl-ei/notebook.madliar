@@ -1,9 +1,8 @@
-import base64
 import hashlib
 from typing import *
 from pydantic import BaseModel
 from src.db.client.my_redis import redis_client
-from src.error import ErrorWithPrompt
+from src.framework.error import ErrorWithPrompt
 from src import utils
 
 

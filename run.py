@@ -2,7 +2,7 @@ import os
 import sys
 import uvicorn
 import logging
-from src.config import DEBUG
+from src.framework.config import DEBUG
 
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(

@@ -4,7 +4,7 @@ import hashlib
 from jinja2 import Template
 from typing import *
 from fastapi.responses import HTMLResponse
-from src.config import DEBUG
+from src.framework.config import DEBUG
 
 
 def randstr(byte_len: int = 32):

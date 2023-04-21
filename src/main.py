@@ -2,9 +2,9 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
-from src.midddleware import ErrorCatchMiddleware
-from src.router import router as main_router
-from src.config import DEBUG
+from src.framework.midddleware import ErrorCatchMiddleware
+from src.router import notebook, blog
+from src.framework.config import DEBUG
 
 PROJECT_NAME = "notebook.madliar"
 VERSION = "1.0"
@@ -30,7 +30,8 @@ def get_application() -> FastAPI:
     )
     application.add_middleware(ErrorCatchMiddleware)
     application.mount("/notebook/static", StaticFiles(directory="src/static"), name="static")
-    application.include_router(main_router, prefix="")
+    application.include_router(notebook.router, prefix="/notebook", tags=["notebook"])
+    application.include_router(blog.router, prefix="", tags=["blog"])
 
     return application
 

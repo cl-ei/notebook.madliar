@@ -4,7 +4,7 @@ import traceback
 import starlette
 from typing import Optional
 from starlette.middleware.base import BaseHTTPMiddleware
-from . import error
+from src.framework import error
 from fastapi.responses import JSONResponse, Response, HTMLResponse
 
 

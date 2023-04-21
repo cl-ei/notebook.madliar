@@ -3,7 +3,7 @@ import pickle
 import asyncio
 import aioredis
 from typing import *
-from src.config import REDIS_URL
+from src.framework.config import REDIS_URL
 
 
 class RedisClient:

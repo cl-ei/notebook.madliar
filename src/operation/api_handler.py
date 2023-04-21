@@ -1,9 +1,6 @@
-import asyncio
-import logging
 import mimetypes
 import re
 import os
-import time
 
 from pydantic import BaseModel
 from typing import *
@@ -11,7 +8,7 @@ from fastapi import UploadFile
 from fastapi.responses import JSONResponse
 from src.db.client.my_redis import GlobalLock, redis_client
 from src.db.query.auth import AuthMgr
-from src.error import ErrorWithPrompt
+from src.framework.error import ErrorWithPrompt
 from src.operation import data_io
 from src import utils
 

@@ -1,15 +1,13 @@
 import json
-import logging
-import mimetypes
 import os.path
-from typing import Dict
-from fastapi import APIRouter, Query, Path, Body, Cookie, Request, File, Form, UploadFile
+from fastapi import APIRouter, Path, Cookie, Request, File, Form, UploadFile
 from fastapi.responses import HTMLResponse, Response
-from src.utils import render_to_html, get_file_type
+from src.utils import render_to_html
 from src.db.query.auth import AuthMgr
 from src.operation.api_handler import SupportedAction, CustomRequest
 from src.operation.data_io import get_share, get_original_file, get_if_shared
-from src import error
+from src.framework import error
+
 router = APIRouter()
 
 
@@ -23,7 +21,7 @@ base64编码的特殊字符: +、/、=
 """
 
 
-@router.get("/notebook")
+@router.get("")
 async def homepage(
         token: str = Cookie("", alias="token")
 ) -> HTMLResponse:
@@ -39,7 +37,7 @@ async def homepage(
     )
 
 
-@router.post("/notebook/api")
+@router.post("/api")
 async def api(request: Request):
     try:
         body = await request.json()
@@ -51,7 +49,7 @@ async def api(request: Request):
     return await SupportedAction.handler(CustomRequest(body=body, headers=headers, cookies=cookies))
 
 
-@router.post("/notebook/upload")
+@router.post("/upload")
 async def upload(
         request: Request,
         file: UploadFile = File(...),
@@ -70,7 +68,7 @@ async def upload(
     ))
 
 
-@router.get("/notebook/share/{email_user}/{email_service}/{file:path}")
+@router.get("/share/{email_user}/{email_service}/{file:path}")
 async def share(
         email_user: str = Path(...),
         email_service: str = Path(...),
@@ -96,7 +94,7 @@ async def share(
     return render_to_html("src/tpl/share.html", context=context)
 
 
-@router.get("/notebook/img_preview/{email_user}/{email_service}/{file:path}")
+@router.get("/img_preview/{email_user}/{email_service}/{file:path}")
 async def img_preview(
         email_user: str = Path(...),
         email_service: str = Path(...),

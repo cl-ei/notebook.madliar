@@ -6,9 +6,9 @@ import os
 import shutil
 from pydantic import BaseModel, BaseConfig
 from typing import *
-from src.config import DEBUG
+from src.framework.config import DEBUG
 from src import utils
-from src.error import ErrorWithPrompt, NotFound
+from src.framework.error import ErrorWithPrompt, NotFound
 
 
 storage_root = "./storage" if DEBUG else "/data/storage"
