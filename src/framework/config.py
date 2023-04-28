@@ -14,5 +14,3 @@ for _try_time in range(5):
         break
     except Exception:  # noqa
         time.sleep(random.random())
-
-print(F"REDIS_URL: {REDIS_URL}\nBLOG_ROOT: {BLOG_ROOT}")

@@ -241,7 +241,7 @@ async def openfile(request: CustomRequest):
             "path": file
         }
 
-    fr: data_io.FileOpenRespData = await data_io.openfile(request.email, file, version)
+    fr: data_io.FileOpenRespData = data_io.openfile(request.email, file, version)
     resp_dict = fr.dict()
     resp_dict["code"] = 0
     return resp_dict

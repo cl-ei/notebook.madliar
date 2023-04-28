@@ -17,6 +17,7 @@ from src import utils
 from src.db.client.my_redis import GlobalLock, redis_client
 from src.framework.error import ErrorWithPrompt
 from src.framework.config import BLOG_ROOT, STORAGE_ROOT
+from src.operation import data_io
 
 
 class ArticleHeader(BaseModel):
@@ -135,17 +136,14 @@ class BlogBuilder:
                 physical_img_path = os.path.join(base, img_path)
 
             if not os.path.isfile(physical_img_path):
-                print(f"Image not exist! {physical_img_path}")
                 continue
 
-            print(f"Image exist! ok: {physical_img_path}")
             file_name = self.move_image_and_calc_md5(
                 source=physical_img_path,
                 dist_root=os.path.join(his_blog_root, "img"),
             )
             img_uri = f"/notebook/publish/{user}/{service}/img/{file_name}"
             replace_map[m] = m[:path_start_index] + img_uri + ")"
-            print(f"m->d: [{m}]->[{replace_map[m]}]")
 
         for origin, rep in replace_map.items():
             body = body.replace(origin, rep)
@@ -178,11 +176,15 @@ class BlogBuilder:
         1. 解析一篇文章，写 html
         2. 返回 meta
         """
+        # source_root: ./storage/i@caoliang.net/blog/2023-03-14/modify_nginx.md
+        # rel_path: 2023-03-14/modify_nginx.md
         rel_path = md_file.replace(source_root, "").lstrip("/")
-        # print(F"parse_one_md: {md_file}, rel_path: {rel_path}")
-        with open(md_file, "rb") as f:
-            content = f.read().decode("utf-8", errors="replace")
 
+        inner_file = data_io.openfile(
+            email=f"{user}@{service}",
+            file=os.path.join("blog", rel_path)
+        )
+        content = data_io.merge_content(inner_file.base_content, inner_file.diff)
         inner = content.strip("\r\n").lstrip("---").lstrip("\r\n")
         try:
             split_index = inner.index("---")
@@ -204,7 +206,6 @@ class BlogBuilder:
         header = ArticleHeader(identity=article_id, **header_dict)
 
         base, _ = os.path.split(md_file)
-        print(f"base: {base}, md: {md_file}")
         parsed_body = self.parse_body(base, body, header, user, service)
         article = Article(content=parsed_body, **header.dict())
 

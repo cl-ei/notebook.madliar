@@ -181,7 +181,7 @@ async def rename(email: str, old_path: str, new_name: str):
         os.rename(f"{dist}.meta", f"{new_path}.meta")
 
 
-async def _get_file_by_version(file: str, version: int) -> FileOpenRespData:
+def _get_file_by_version(file: str, version: int) -> FileOpenRespData:
     """
     通过 version file 还原 全量文件
 
@@ -228,7 +228,7 @@ async def _get_file_by_version(file: str, version: int) -> FileOpenRespData:
     return FileOpenRespData(version=version, base=vf.base, base_content=content, diff=vf.diff)
 
 
-async def _get_last_vb_of_file(file) -> Tuple[Optional[int], Optional[int]]:
+def _get_last_vb_of_file(file) -> Tuple[Optional[int], Optional[int]]:
     """
     当 version 或者 base file 不存在时，返回 0。按照约定，0代表原文件
 
@@ -259,7 +259,7 @@ async def get_if_shared(email: str, file: str) -> bool:
     return os.path.isfile(shared_file)
 
 
-async def openfile(email: str, file: str, version: int = None) -> FileOpenRespData:
+def openfile(email: str, file: str, version: int = None) -> FileOpenRespData:
     """
     获取文件：
         request args:
@@ -276,9 +276,9 @@ async def openfile(email: str, file: str, version: int = None) -> FileOpenRespDa
         raise ErrorWithPrompt("文件不存在")
     logging.info(f"get version: {version}")
     if version is None:
-        version, _ = await _get_last_vb_of_file(dist)
+        version, _ = _get_last_vb_of_file(dist)
     logging.info(f"get last version: {version}")
-    return await _get_file_by_version(dist, version)
+    return _get_file_by_version(dist, version)
 
 
 async def savefile(email: str, file: str, content: Union[str, bytes], create=False) -> Tuple[int, int]:
@@ -317,7 +317,7 @@ async def savefile(email: str, file: str, content: Union[str, bytes], create=Fal
 
     # 创建
     # 寻找最新版本
-    last_version, last_base = await _get_last_vb_of_file(dist)
+    last_version, last_base = _get_last_vb_of_file(dist)
     target_version, target_base = last_version + 1, last_base + 1
 
     # 创建base
@@ -374,7 +374,7 @@ async def savefile_delta(email: str, path: str, base: int, dist_md5: str, diff: 
     if result_md5 != dist_md5:
         raise ErrorWithPrompt("文件不一致")
 
-    version, max_base = await _get_last_vb_of_file(file)
+    version, max_base = _get_last_vb_of_file(file)
     target_version = version + 1
     os.makedirs(meta_path, exist_ok=True)
     now = datetime.datetime.now()
@@ -448,7 +448,7 @@ async def get_share(email: str, file: str) -> Tuple[str, Union[str, bytes]]:
             bin_content = f.read()
         return mimetype, bin_content
 
-    version, base = await _get_last_vb_of_file(dist_file)
+    version, base = _get_last_vb_of_file(dist_file)
     if version == 0:
         with open(dist_file, "rb") as f:
             content = f.read().decode("utf-8")
@@ -499,11 +499,11 @@ async def get_diff(email: str, file: str, version: int) -> DiffResp:
         last_version -= 1
 
     # 读取旧文件
-    r = await _get_file_by_version(dist_file, last_version)
+    r = _get_file_by_version(dist_file, last_version)
     last_content = merge_content(r.base_content, r.diff)
 
     # 读取新文件
-    r = await _get_file_by_version(dist_file, version)
+    r = _get_file_by_version(dist_file, version)
     cur_content = merge_content(r.base_content, r.diff)
 
     return DiffResp(
