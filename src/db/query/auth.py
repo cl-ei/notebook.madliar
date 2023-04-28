@@ -90,7 +90,7 @@ class AuthMgr:
                 raise ErrorWithPrompt("操作频繁，请稍后再试")
 
             encrypted_password = await data_io.get_encrypted_password(email)
-            encrypted_old = await Encryptor.encode(old_password)
+            encrypted_old = Encryptor.encode(old_password)
             if encrypted_old != encrypted_password:
                 raise ErrorWithPrompt("email或密码错误")
 
