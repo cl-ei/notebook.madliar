@@ -226,18 +226,12 @@ class BlogBuilder:
     def gen_category(self, write_root: str, articles: List[Article], user: str, service: str):
         # 准备 context
         articles.sort(key=lambda x: x.date, reverse=True)
-        categories: List[Tuple[str, List[Article]]] = []
-        for a in articles:
-            index = -1
-            for i, cat_name in enumerate(categories):
-                if cat_name == a.category:
-                    index = i
-                    break
+        cat_map: Dict[str, List] = {}
+        for art in articles:
+            cat_map.setdefault(art.category, []).append(art)
 
-            if index == -1:
-                categories.append((a.category, [a]))
-            else:
-                categories[index][1].append(a)
+        categories: List[Tuple[str, List[Article]]] = [(cat_name, art_li) for cat_name, art_li in cat_map.items()]
+        categories.sort(key=lambda x: x[0])
 
         # 写 html
         html_content = jinja2.Template(self.tpl).render({
