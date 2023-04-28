@@ -106,3 +106,10 @@ class AuthMgr:
         if saved_tv and saved_tv == value:
             return LoginInfo(email=email)
         return None
+
+    @classmethod
+    async def force_reset_password(cls, email: str, password: str):
+        password_key = f"USR:{email}"
+        encrypted_key = Encryptor.encode(password)
+        await redis_client.set(password_key, value=encrypted_key)
+        return await cls.gen_token(email)

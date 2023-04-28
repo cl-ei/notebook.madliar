@@ -6,7 +6,9 @@ from src.utils import render_to_html
 from src.db.query.auth import AuthMgr
 from src.operation.api_handler import SupportedAction, CustomRequest
 from src.operation.data_io import get_share, get_original_file, get_if_shared
+from src.operation.blog import fresh_blog
 from src.framework import error
+
 
 router = APIRouter()
 
@@ -125,3 +127,10 @@ async def img_preview(
         raise error.NotFound()
 
     return Response(content, media_type=mimetype)
+
+
+@router.get("/gen_blog")
+async def generate_blog():
+    email = "t@t.tt"
+    await fresh_blog(email)
+    return {"code": 0}

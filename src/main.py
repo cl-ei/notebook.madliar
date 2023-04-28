@@ -3,8 +3,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
 from src.framework.midddleware import ErrorCatchMiddleware
-from src.router import notebook, blog
-from src.framework.config import DEBUG
+from src.router import notebook
+from src.framework.config import DEBUG, BLOG_ROOT
 
 PROJECT_NAME = "notebook.madliar"
 VERSION = "1.0"
@@ -30,8 +30,8 @@ def get_application() -> FastAPI:
     )
     application.add_middleware(ErrorCatchMiddleware)
     application.mount("/notebook/static", StaticFiles(directory="src/static"), name="static")
+    application.mount("/notebook/publish", StaticFiles(directory=BLOG_ROOT), name="blog")
     application.include_router(notebook.router, prefix="/notebook", tags=["notebook"])
-    application.include_router(blog.router, prefix="", tags=["blog"])
 
     return application
 

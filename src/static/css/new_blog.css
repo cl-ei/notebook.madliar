@@ -1,7 +1,7 @@
 @charset "UTF-8";
 @font-face {
     font-family: "Dinkie";
-    src: url("/static/fonts/DinkieBitmap-9px.woff2") format('woff');
+    src: url("/notebook/static/fonts/DinkieBitmap-9px.woff2") format('woff');
     font-weight: normal;
     font-style: normal;
 }
@@ -38,6 +38,14 @@ a{
 a:hover{
     color: #ff80a4;
     border-bottom: 1px solid #ff5f5f;
+}
+.broken-image {
+    background-image: url('/notebook/static/img/broken_img.jpg');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    min-width: 25px;
+    min-height: 25px;
 }
 .inner-body{
     background: #fcfcfc;

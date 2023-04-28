@@ -1,3 +1,4 @@
+import os
 import string
 import random
 import hashlib
@@ -44,3 +45,27 @@ def calc_md5(content: str) -> str:
     md5 = hashlib.md5()
     md5.update(content.encode("utf-8"))
     return md5.hexdigest()
+
+
+def safe_make_dir(path: str) -> bool:
+    for _try_time in range(3):
+        try:
+            os.makedirs(path, exist_ok=True)
+            return True
+        except Exception:  # noqa
+            pass
+    return False
+
+
+def list_all_files(path: str) -> List[str]:
+    result = []
+    scan_list = [path]
+    while scan_list:
+        this_path = scan_list.pop(0)
+        for file in os.listdir(this_path):
+            full = os.path.join(this_path, file)
+            if os.path.isdir(full):
+                scan_list.append(full)
+            elif os.path.isfile(full):
+                result.append(full)
+    return result
