@@ -73,10 +73,11 @@ class RedisClient:
             value: Any,
             timeout: int = 3600*24*7,
             _un_pickle: bool = False
-    ):
+    ) -> bool:
         if not _un_pickle:
             value = self._dumps(value)
-        return await self.execute("set", key, value, "ex", timeout, "nx")
+        result = await self.execute("set", key, value, "ex", timeout, "nx")
+        return bool(result == b'OK')
 
     async def delete(self, key: str) -> int:
         return await self.execute("DEL", key)

@@ -6,12 +6,12 @@ import os
 import shutil
 from pydantic import BaseModel, BaseConfig
 from typing import *
-from src.framework.config import DEBUG
+from src.framework.config import DEBUG, STORAGE_ROOT, BLOG_ROOT
 from src import utils
 from src.framework.error import ErrorWithPrompt, NotFound
 
 
-storage_root = "./storage" if DEBUG else "/data/storage"
+storage_root = STORAGE_ROOT
 """
 隐藏文件:
 1. 在文件同级目录，有 "{file_name}.meta"的文件夹，存储该文件的元信息
@@ -512,3 +512,33 @@ async def get_diff(email: str, file: str, version: int) -> DiffResp:
         current_version=version,
         current_content=cur_content,
     )
+
+
+async def get_blog_version(email: str) -> str:
+    user, service = email.split("@", 1)
+    try:
+        with open(os.path.join(BLOG_ROOT, user, service, "version.txt"), "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
+
+
+# for auth
+async def get_encrypted_password(email: str) -> str:
+    user, service = email.split("@", 1)
+    dist_file = os.path.join(STORAGE_ROOT, "auth", f"{user}__at__{service}.txt")
+    try:
+        with open(dist_file, "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
+
+
+async def set_encrypted_password(email: str, token: str) -> None:
+    user, service = email.split("@", 1)
+    auth_root = os.path.join(STORAGE_ROOT, "auth")
+    utils.safe_make_dir(auth_root)
+    dist_file = os.path.join(auth_root, f"{user}__at__{service}.txt")
+
+    with open(dist_file, "wb") as f:
+        f.write(token.encode("utf-8"))

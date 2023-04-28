@@ -49,7 +49,7 @@
             <div class="second-title">最近发布</div>
             {% for article in articles %}
                 <div class="article-bar">
-                    <a href="/blog/article/{{ article.identity }}">
+                    <a href="/notebook/publish/{{ user }}/{{ service }}/{{ article.identity }}.html">
                         <span class="article-date">{{ article.date }}</span>
                         <span class="article-title">{{ article.title }}</span>
                     </a>

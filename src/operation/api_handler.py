@@ -10,6 +10,7 @@ from src.db.client.my_redis import GlobalLock, redis_client
 from src.db.query.auth import AuthMgr
 from src.framework.error import ErrorWithPrompt
 from src.operation import data_io
+from src.operation.blog import fresh_blog
 from src import utils
 
 
@@ -311,3 +312,17 @@ async def get_history(request: CustomRequest):
     resp = history.dict()
     resp["code"] = 0
     return resp
+
+
+@SupportedAction(action="refresh_blog", login_required=True)
+async def refresh_blog(request: CustomRequest):
+    email = request.email
+    await fresh_blog(email)
+    return {"code": 0}
+
+
+@SupportedAction(action="get_blog_info", login_required=True)
+async def refresh_blog(request: CustomRequest):
+    email = request.email
+    last_ver = await data_io.get_blog_version(email)
+    return {"code": 0, "last_update": last_ver}

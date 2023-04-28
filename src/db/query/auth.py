@@ -1,8 +1,9 @@
 import hashlib
 from typing import *
 from pydantic import BaseModel
-from src.db.client.my_redis import redis_client
+from src.db.client.my_redis import redis_client, GlobalLock
 from src.framework.error import ErrorWithPrompt
+from src.operation import data_io
 from src import utils
 
 
@@ -19,27 +20,15 @@ class LoginInfo(BaseModel):
 
 class AuthMgr:
     _key_token = "TK:{email}:{token_key}"
-    _key_email_password = "USR:{email}"
 
     @classmethod
-    async def gen_token(cls, email: str) -> str:
+    async def gen_temporary_token(cls, email: str) -> str:
         token_key = utils.randstr(12)
         token_value = utils.randstr()
         flag = await redis_client.set(key=f"TK:{email}:{token_key}", value=token_value, timeout=3600*24*30)
         if flag:
             return f"{email}:{token_key}:{token_value}"
         raise ErrorWithPrompt("未能生成token")
-
-    @classmethod
-    async def register(cls, email: str, password: str) -> str:
-        password_key = f"USR:{email}"
-        origin = await redis_client.get(password_key)
-        if origin is not None:
-            raise ErrorWithPrompt("用户已存在")
-
-        encrypted_key = Encryptor.encode(password)
-        await redis_client.set(password_key, value=encrypted_key)
-        return await cls.gen_token(email)
 
     @classmethod
     async def varify_token(cls, token: str) -> LoginInfo:
@@ -54,12 +43,29 @@ class AuthMgr:
         raise ErrorWithPrompt("认证失败")
 
     @classmethod
+    async def register(cls, email: str, password: str) -> str:
+        async with GlobalLock(redis=redis_client, name=f"login:{email}", try_times=1) as lock:
+            if not lock.locked:
+                raise ErrorWithPrompt("操作频繁，请稍后再试")
+
+            encrypted_password = await data_io.get_encrypted_password(email)
+            if encrypted_password:
+                raise ErrorWithPrompt("用户已存在，请登录。如果遗忘密码，请联系站长")
+
+            encrypted_key = Encryptor.encode(password)
+            await data_io.set_encrypted_password(email, encrypted_key)
+            return await cls.gen_temporary_token(email)
+
+    @classmethod
     async def login(cls, email: str, password: str) -> str:
-        password_key = f"USR:{email}"
-        origin = await redis_client.get(password_key)
-        if origin is None or origin != Encryptor.encode(password):
-            raise ErrorWithPrompt("email或密码错误")
-        return await cls.gen_token(email)
+        async with GlobalLock(redis=redis_client, name=f"login:{email}", try_times=1) as lock:
+            if not lock.locked:
+                raise ErrorWithPrompt("登录频繁，请稍后再试")
+            existed_encrypted = await data_io.get_encrypted_password(email)
+            check_pass = Encryptor.encode(password)
+            if check_pass != existed_encrypted:
+                raise ErrorWithPrompt("email或密码错误")
+            return await cls.gen_temporary_token(email)
 
     @classmethod
     async def logout(cls, token) -> None:
@@ -79,20 +85,22 @@ class AuthMgr:
         except ValueError:
             raise ErrorWithPrompt("认证失败")
 
-        # 验证旧密码
-        password_key = f"USR:{email}"
-        origin = await redis_client.get(password_key)
-        if origin is None or origin != Encryptor.encode(old_password):
-            raise ErrorWithPrompt("email或密码错误")
+        async with GlobalLock(redis=redis_client, name=f"login:{email}", try_times=1) as lock:
+            if not lock.locked:
+                raise ErrorWithPrompt("操作频繁，请稍后再试")
 
-        # 写入新密码
-        encrypted_key = Encryptor.encode(new_password)
-        await redis_client.set(password_key, value=encrypted_key)
+            encrypted_password = await data_io.get_encrypted_password(email)
+            if old_password != encrypted_password:
+                raise ErrorWithPrompt("email或密码错误")
 
-        # 删除 token
-        saved_value = await redis_client.get(f"TK:{email}:{token_key}")
-        if saved_value == token_value:
-            await redis_client.delete(f"TK:{email}:{token_key}")
+            # 写入新密码
+            encrypted_key = Encryptor.encode(new_password)
+            await data_io.set_encrypted_password(email, encrypted_key)
+
+            # 删除 token
+            saved_value = await redis_client.get(f"TK:{email}:{token_key}")
+            if saved_value == token_value:
+                await redis_client.delete(f"TK:{email}:{token_key}")
 
     @classmethod
     async def get_login_info(cls, token: str) -> Optional[LoginInfo]:
@@ -109,7 +117,6 @@ class AuthMgr:
 
     @classmethod
     async def force_reset_password(cls, email: str, password: str):
-        password_key = f"USR:{email}"
         encrypted_key = Encryptor.encode(password)
-        await redis_client.set(password_key, value=encrypted_key)
-        return await cls.gen_token(email)
+        await data_io.set_encrypted_password(email, encrypted_key)
+        return await cls.gen_temporary_token(email)

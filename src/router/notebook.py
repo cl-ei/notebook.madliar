@@ -104,33 +104,23 @@ async def img_preview(
         token: str = Cookie(""),
 ):
     """
-    /blog 下的媒体文件可以直接访问，其他文件夹下的文件，需满足其一
     1. 校验email是否和当前用户一致
     2. 有shared key
 
     """
     email = f"{email_user}@{email_service}"
 
-    # blog目录下公开
-    if not file.startswith("/blog"):
-        try:
-            login_info = await AuthMgr.varify_token(token)
-            login_email = login_info.email
-        except Exception:  # noqa
-            login_email = None
-        if login_email != email:
-            if not get_if_shared(email, file):
-                raise error.Forbidden()
+    try:
+        login_info = await AuthMgr.varify_token(token)
+        login_email = login_info.email
+    except Exception:  # noqa
+        login_email = None
+    if login_email != email:
+        if not get_if_shared(email, file):
+            raise error.Forbidden()
 
     mimetype, content = await get_original_file(email, file)
     if not isinstance(mimetype, str) or "image/" not in mimetype:
         raise error.NotFound()
 
     return Response(content, media_type=mimetype)
-
-
-@router.get("/gen_blog")
-async def generate_blog():
-    email = "t@t.tt"
-    await fresh_blog(email)
-    return {"code": 0}

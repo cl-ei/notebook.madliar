@@ -606,6 +606,7 @@ $.cl = {
         })
     },
     renderJstreeContextMenu: function(node){
+        console.log("ContextMenu: ",node);
         var selectedNodeId = node.id;
         if (node.type !== "folder") {
             return {
@@ -643,7 +644,7 @@ $.cl = {
                 }
             }
         }
-        return {
+        let returnDat = {
             "new": {
                 "label": "新建文档",
                 "action": function () {
@@ -675,6 +676,40 @@ $.cl = {
                 }
             }
         };
+        if (selectedNodeId === "/blog") {
+            returnDat["get_blog_ver"] = {
+                "label": "查看详情",
+                "action": function () {
+                    $.cl.sendRequest({action: "get_blog_info"}, function (resp){
+                        if (resp.code === 0) {
+                            if (resp.last_update.length === 0) {
+                                $.cl.popupMessage("尚未发布博客。")
+                            } else {
+                                let atCharIndex = window.contextData.loginInfo.email.indexOf("@");
+                                let user = window.contextData.loginInfo.email.substring(0, atCharIndex),
+                                    service = window.contextData.loginInfo.email.substring(atCharIndex + 1);
+                                $.cl.popupMessage(
+                                    "最后更新于: " + resp.last_update + "<br><br>" +
+                                    '<a href="/notebook/publish/' +
+                                    user + "/" + service + '/index.html" target="_blank">点击这里查看blog首页</a>'
+                                )
+                            }
+                        } else {
+                            $.cl.popupMessage(resp.msg);
+                        }
+                    })
+                }
+            }
+            returnDat["refresh_blog"] = {
+                "label": "发布",
+                "action": function () {
+                    $.cl.sendRequest({action: "refresh_blog"}, function (resp){
+                        $.cl.popupMessage(resp.code === 0 ? "提交成功，开始发布！请稍后查看进度。" : resp.msg, "提示", 3);
+                    });
+                }
+            }
+        }
+        return returnDat;
     },
     getAndRenderDefaultFileListAndPage: function(){
         var jstreeInstance = $("#jstree");

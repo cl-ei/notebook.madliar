@@ -318,17 +318,20 @@ async def fresh_blog(email: str):
     BLOG_ROOT/{email_user}/{service}/version.txt  此文件夹下的文件名代表刷新 blog 时的时间戳
     BLOG_ROOT/{email_user}/{service}/index.html  此文件夹下
     """
-    async with GlobalLock(redis=redis_client, name=f"gb:{email}", lock_time=3600, try_times=1) as lock:
-        if not lock.locked:
-            raise ErrorWithPrompt("Blog正在生成中，请稍后再试")
+    uni_key = f"genb:{email}"
+    lock = await redis_client.set_if_not_exists(uni_key, value="123", timeout="3600")
+    if not lock:
+        raise ErrorWithPrompt("Blog正在生成中，请稍后再试")
 
-        async def async_wrapper():
-            p = Process(target=gen_wrapper, args=(email, ))
-            p.daemon = True
-            p.start()
-            await asyncio.sleep(1)
+    async def async_wrapper():
+        p = Process(target=gen_wrapper, args=(email, ))
+        p.daemon = True
+        p.start()
+        await asyncio.sleep(1)
 
-            while p.is_alive():
-                await asyncio.sleep(3)
+        while p.is_alive():
+            await asyncio.sleep(3)
 
-        asyncio.create_task(async_wrapper())
+        await redis_client.delete(uni_key)
+
+    asyncio.create_task(async_wrapper())
