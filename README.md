@@ -21,7 +21,7 @@ This is a cloud notebook that allows multiple users to register and use. It come
 2. 执行 `pip install -r reqirements.txt`
 3. 执行 ```export REDIS_URL=redis://:@localhost:6379/0 && python run.py```
 
-访问 [](http://localhost:10091/notebook) 即可看到欢迎页。
+访问 http://localhost:10091/notebook 即可看到欢迎页。
 
 ---
 本项目由GPLv3协议开源发布。This project is open source and released under the GPLv3 license.
