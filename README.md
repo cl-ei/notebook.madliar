@@ -6,10 +6,10 @@ This is a cloud notebook that allows multiple users to register and use. It come
 
 [](https://www.madliar.com)
 
-![](/src/static/notebook/readme_img/blog.png)
-![](/src/static/notebook/readme_img/preview.png)
-![](/src/static/notebook/readme_img/screen-shot2.png)
-![](/src/static/notebook/readme_img/shareprompt.png)
+![](src/static/notebook/readme_img/blog.png)
+![](src/static/notebook/readme_img/preview.png)
+![](src/static/notebook/readme_img/screen-shot2.png)
+![](src/static/notebook/readme_img/shareprompt.png)
 
 ## 架构
 
