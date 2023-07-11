@@ -4,7 +4,7 @@
 
 This is a cloud notebook that allows multiple users to register and use. It comes with a directory structure, supports online preview of image files, and preserves editing history. Additionally, if a user creates a "blog" directory, it can generate a static blog. You can also modify this project and add CI support to push it to a web hosting server or GitHub Pages. Click here to view the example:
 
-[](https://www.madliar.com)
+[web站点示例](https://www.madliar.com)
 
 ![](src/static/notebook/readme_img/blog.png)
 ![](src/static/notebook/readme_img/preview.png)
