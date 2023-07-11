@@ -3,16 +3,24 @@
 <head>
     <meta http-equiv="content-type" content="text/html; charset=UTF-8">
     <meta charset="utf-8">
-    <title>MadLiar</title>
+{% if page == "article" %}
+    <title>{{ article.title }} - 来自Madliar</title>
+{% elif page == "category" %}
+    <title>Madliar - 分类预览</title>
+{% elif page == "about" %}
+    <title>Madliar - 关于</title>
+{% else %}
+    <title>Madliar</title>
+{% endif %}
     <meta name="HandheldFriendly" content="True" />
     <meta name="MobileOptimized" content="320" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     {% if page == "article"%}
-        <meta name="description" content="{% if article.description %}{{ article.description }}{% else %}{{ article.title }}{% endif %}">
+        <meta name="description" content="Madliar的博客，{% if article.description %}{{ article.description }}{% else %}{{ article.title }}{% endif %}">
     {% else %}
-        <meta name="description" content="博主CL，一个编程爱好者。这是我的博客，记录学习笔记和灵感">
+        <meta name="description" content="Madliar的博客，记录学习笔记和灵感">
     {% endif %}
-    <meta name="keywords" content="MADLIAR, CL, 技术博客, 编程笔记"/>
+    <meta name="keywords" content="MADLIAR, CL, Madliar的博客, 技术博客, 编程笔记"/>
     <meta name="author" content="CL">
     <meta http-equiv="Cache-Control" content="no-transform" />
     <meta http-equiv="Cache-Control" content="no-siteapp" />
