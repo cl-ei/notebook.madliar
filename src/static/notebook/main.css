@@ -203,6 +203,12 @@ img{
     white-space: normal;
     word-break: break-all;
 }
+#cl-confirm-body{
+    word-break: break-word;
+    white-space: normal;
+    width: 100%;
+    overflow: hidden;
+}
 .hidden-area{
     display: none;
 }
