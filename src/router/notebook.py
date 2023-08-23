@@ -6,7 +6,6 @@ from src.utils import render_to_html
 from src.db.query.auth import AuthMgr
 from src.operation.api_handler import SupportedAction, CustomRequest
 from src.operation.data_io import get_share, get_original_file, get_if_shared
-from src.operation.blog import fresh_blog
 from src.framework import error
 
 
