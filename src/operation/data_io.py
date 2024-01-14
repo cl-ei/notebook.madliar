@@ -140,7 +140,9 @@ async def listdir(email: str, path: str) -> List[FileLike]:
                 filetype = utils.get_file_type(ext)
             else:
                 filetype = "bin"
-            result.setdefault(filetype, []).append(FileLike(id=os.path.join(path, f), type=filetype, text=f, children=False))
+            result.setdefault(filetype, []).append(
+                FileLike(id=os.path.join(path, f), type=filetype, text=f, children=False)
+            )
 
     # 排序，folder优先在上，其他的子类按名称排序
     return_data = []
@@ -148,7 +150,7 @@ async def listdir(email: str, path: str) -> List[FileLike]:
     if "folder" in result:
         keys.insert(0, "folder")
     for key in keys:
-        return_data.extend(sorted(result[key], key=lambda x: x.type))
+        return_data.extend(sorted(result[key], key=lambda x: x.text))
     return return_data
 
 
