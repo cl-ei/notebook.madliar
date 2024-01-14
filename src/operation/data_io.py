@@ -121,7 +121,7 @@ async def mkdir(email: str, path: str):
 
 async def listdir(email: str, path: str) -> List[FileLike]:
     dist = os.path.join(storage_root, email, path.lstrip("/"))
-    result: List[FileLike] = []
+    result: Dict[str, List[FileLike]] = {}
     try:
         files = os.listdir(dist)
     except FileNotFoundError:
@@ -132,15 +132,24 @@ async def listdir(email: str, path: str) -> List[FileLike]:
         if os.path.isdir(full):
             if f.endswith(".meta"):
                 continue
-            result.append(FileLike(id=os.path.join(path, f), type="folder", text=f))
+            filetype = "folder"
+            result.setdefault(filetype, []).append(FileLike(id=os.path.join(path, f), type=filetype, text=f))
         if os.path.isfile(full):
             if "." in f:
                 ext = f.split(".")[-1]
                 filetype = utils.get_file_type(ext)
             else:
                 filetype = "bin"
-            result.append(FileLike(id=os.path.join(path, f), type=filetype, text=f, children=False))
-    return result
+            result.setdefault(filetype, []).append(FileLike(id=os.path.join(path, f), type=filetype, text=f, children=False))
+
+    # 排序，folder优先在上，其他的子类按名称排序
+    return_data = []
+    keys = sorted([k for k in result.keys() if k != "folder"])
+    if "folder" in result:
+        keys.insert(0, "folder")
+    for key in keys:
+        return_data.extend(sorted(result[key], key=lambda x: x.type))
+    return return_data
 
 
 async def rm(email: str, path: str):
