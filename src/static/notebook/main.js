@@ -16,7 +16,9 @@ $.cl = {
             let splitLineWidth = 6,
                 treeW = parseFloat($("#folder-tree").css("width").replace("px", "")),
                 editW = parseFloat($("#input-area").css("width").replace("px", ""));
-            let showW = document.body.offsetWidth - splitLineWidth*2 - treeW - editW;
+
+            // -1 阻止浮点数原因，导致实际宽度多出1像素造文档栏挤压出界
+            let showW = document.body.offsetWidth - splitLineWidth*2 - treeW - editW - 1;
             $("#content-area").css({width: showW + 'px'});
             $("#nav, #content").css({"display": "block"});
             $("#browser-prompt, #uavaliable-mask").css({"display": "none"});
@@ -27,7 +29,7 @@ $.cl = {
         let windowWidth = document.body.offsetWidth,
             splitLineWidth = 6;
         let treeW = Math.max(windowWidth*0.2, 220);
-        let contentW = (windowWidth - treeW - splitLineWidth*2) / 2;
+        let contentW = (windowWidth - treeW - splitLineWidth*2) / 2 - 1;
         $("#folder-tree").css({width: treeW + "px"});
         $("#input-area").css({width: contentW + "px"});
         $("#content-area").css({width: contentW + "px"});
