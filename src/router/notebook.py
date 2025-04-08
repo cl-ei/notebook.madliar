@@ -115,7 +115,7 @@ async def img_preview(
     except Exception:  # noqa
         login_email = None
     if login_email != email:
-        if not get_if_shared(email, file):
+        if not await get_if_shared(email, file):
             raise error.Forbidden()
 
     mimetype, content = await get_original_file(email, file)
