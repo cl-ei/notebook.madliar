@@ -68,7 +68,7 @@ class AuthMgr:
         await data_io.delete_user_token(email, token)
 
     @classmethod
-    async def change_password(cls, email, token, old_password, new_password) -> None:
+    async def change_password(cls, email, old_password, new_password) -> None:
         async with GlobalLock(redis=redis_client, name=f"login:{email}", try_times=1) as lock:
             if not lock.locked:
                 raise ErrorWithPrompt("操作频繁，请稍后再试")

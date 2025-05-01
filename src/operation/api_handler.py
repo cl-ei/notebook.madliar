@@ -122,7 +122,6 @@ async def logout(request):
 @SupportedAction(action="change_password", login_required=True)
 async def change_password(request):
     email = request.cookies.get("email")
-    token = request.cookies.get("token")
     old_password = request.body.get("old_password", "")
     new_password = request.body.get("new_password", "")
 
@@ -130,7 +129,7 @@ async def change_password(request):
         return {"code": 403, "msg": u"email或密码错误"}
 
     try:
-        await AuthMgr.change_password(email, token, old_password, new_password)
+        await AuthMgr.change_password(email, old_password, new_password)
     except ErrorWithPrompt as e:
         return {"code": 403, "msg": e.msg}
 
