@@ -1027,6 +1027,7 @@ $.cl = {
             if (newContent !== $.cl.oldContent){
                 $.cl.oldContent = newContent;
                 $("#content-text").html(marked(newContent));
+                hljs.highlightAll();
             }
         }, 400);
     },
