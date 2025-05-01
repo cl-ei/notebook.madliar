@@ -1,14 +1,30 @@
 import os
+import sys
 import random
 import time
+from pathlib import Path
 
-DEBUG = bool(os.environ.get("RUN_ENV") != "prod")
+DEBUG = bool(sys.platform == "win32")
+if DEBUG:
+    print("The app is running in DEBUG mode.")
+
+if DEBUG:
+    home_dir = str(Path.home())
+    LOG_FILE = os.path.join(home_dir, "notebook_app.log")
+else:
+    LOG_FILE = "/var/log/notebook_app.log"
+print(f"APP log will be written to this file: {LOG_FILE}")
 
 # "redis://:{password}@{host}:{port}/{db}"
 REDIS_URL = os.environ.get("REDIS_URL")
+if not REDIS_URL:
+    print("No REDIS_URL configured, global lock will not be used.")
+
 STORAGE_ROOT = os.environ.get("STORAGE_ROOT")
 if not STORAGE_ROOT:
-    STORAGE_ROOT = "./storage" if DEBUG else "/data/storage"
+    home_dir = str(Path.home())
+    STORAGE_ROOT = os.path.join(home_dir, "notebook_storage_root")
+
 BLOG_ROOT = os.path.join(STORAGE_ROOT, "blog")
 for _try_time in range(5):
     try:

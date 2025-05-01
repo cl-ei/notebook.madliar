@@ -24,10 +24,11 @@ base64编码的特殊字符: +、/、=
 
 @router.get("")
 async def homepage(
+        email: str = Cookie("", alias="email"),
         token: str = Cookie("", alias="token")
 ) -> HTMLResponse:
     try:
-        login_info = await AuthMgr.get_login_info(token)
+        login_info = await AuthMgr.get_login_info(email, token)
         login_info = login_info.dict()
     except Exception:  # noqa
         login_info = {}

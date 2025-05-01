@@ -1,12 +1,12 @@
 import mimetypes
 import re
 import os
-import datetime
 
 from pydantic import BaseModel
 from typing import *
 from fastapi import UploadFile
 from fastapi.responses import JSONResponse
+from src.framework.config import DEBUG
 from src.db.client.my_redis import GlobalLock, redis_client
 from src.db.query.auth import AuthMgr
 from src.framework.error import ErrorWithPrompt
@@ -42,9 +42,10 @@ class SupportedAction(object):
             return {"code": 404, "msg": f"Action({action}) is not supported."}
         picked_func, login_required = cached
         if login_required:
-            mad_token = req.cookies.get("token")
+            email = req.cookies.get("email")
+            token = req.cookies.get("token")
             try:
-                login_info = await AuthMgr.varify_token(mad_token)
+                login_info = await AuthMgr.varify_token(email, token)
             except ErrorWithPrompt as e:
                 return {"code": 403, "msg": e.msg}
             req.email = login_info.email
@@ -69,6 +70,7 @@ async def login(request: CustomRequest):
         return {"code": 403, "msg": e.msg}
 
     resp = JSONResponse({"code": 0, "email": email})
+    resp.set_cookie("email", value=email, httponly=True)
     resp.set_cookie("token", value=token, httponly=True)
     return resp
 
@@ -78,7 +80,7 @@ async def register(request):
     email = request.body.get("email")
     password = request.body.get("password", "")
 
-    if datetime.datetime.now().year >= 2025:
+    if not DEBUG:
         return {
             "code": 400,
             "msg": "由于此站点遭受攻击，不再支持注册。你可以自行部署此网站的开源版本，具体请访问："
@@ -99,21 +101,27 @@ async def register(request):
 
     resp = JSONResponse({"code": 0, "email": email})
     resp.set_cookie(key="token", value=token, httponly=True)
+    resp.set_cookie(key="email", value=email, httponly=True)
     await data_io.mkdir(email, "/")
     return resp
 
 
 @SupportedAction(action="logout", login_required=True)
 async def logout(request):
+    email = request.cookies.get("email")
     token = request.cookies.get("token")
-    await AuthMgr.logout(token)
+
+    await AuthMgr.logout(email, token)
     resp = JSONResponse({"code": 0})
+
+    resp.delete_cookie(key="email", httponly=True)
     resp.delete_cookie(key="token", httponly=True)
     return resp
 
 
 @SupportedAction(action="change_password", login_required=True)
 async def change_password(request):
+    email = request.cookies.get("email")
     token = request.cookies.get("token")
     old_password = request.body.get("old_password", "")
     new_password = request.body.get("new_password", "")
@@ -122,11 +130,12 @@ async def change_password(request):
         return {"code": 403, "msg": u"email或密码错误"}
 
     try:
-        await AuthMgr.change_password(token, old_password, new_password)
+        await AuthMgr.change_password(email, token, old_password, new_password)
     except ErrorWithPrompt as e:
         return {"code": 403, "msg": e.msg}
 
     resp = JSONResponse({"code": 0})
+    resp.delete_cookie(key="email", httponly=True)
     resp.delete_cookie(key="token", httponly=True)
     return resp
 

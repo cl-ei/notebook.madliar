@@ -553,3 +553,67 @@ async def set_encrypted_password(email: str, token: str) -> None:
 
     with open(dist_file, "wb") as f:
         f.write(token.encode("utf-8"))
+
+
+async def load_user_token(email: str) -> List[str]:
+    user, service = email.split("@", 1)
+    auth_root = os.path.join(STORAGE_ROOT, "auth")
+    utils.safe_make_dir(auth_root)
+    dist_file = os.path.join(auth_root, f"{user}__at__{service}_t.txt")
+    if not os.path.exists(dist_file):
+        return []
+    with open(dist_file, "r") as f:
+        content = f.read(1024*100)
+    return content.split("\n")
+
+
+async def add_user_token(email: str, token: str) -> None:
+    """
+    将 token 追加到用户文件中，如果文件超过 100KB，则清理最久远的
+
+    """
+    user, service = email.split("@", 1)
+    auth_root = os.path.join(STORAGE_ROOT, "auth")
+    utils.safe_make_dir(auth_root)
+    dist_file = os.path.join(auth_root, f"{user}__at__{service}_t.txt")
+
+    if os.path.exists(dist_file):
+        with open(dist_file, "r") as f:
+            content = f.read()
+
+        token_list = content.split("\n")
+    else:
+        token_list = []
+
+    new_content = "\n".join(token_list[-9:] + [token])
+    with open(dist_file, "w") as f:
+        f.write(new_content)
+
+
+async def delete_user_token(email: str, token: str) -> None:
+    user, service = email.split("@", 1)
+    auth_root = os.path.join(STORAGE_ROOT, "auth")
+    utils.safe_make_dir(auth_root)
+    dist_file = os.path.join(auth_root, f"{user}__at__{service}_t.txt")
+    if not os.path.exists(dist_file):
+        return
+
+    with open(dist_file, "r") as f:
+        content = f.read()
+
+    token_list = content.split("\n")
+    new_content = "\n".join([t for t in token_list if t != token])
+
+    with open(dist_file, "w") as f:
+        f.write(new_content)
+
+
+async def delete_all_user_token(email: str) -> None:
+    user, service = email.split("@", 1)
+    auth_root = os.path.join(STORAGE_ROOT, "auth")
+    utils.safe_make_dir(auth_root)
+    dist_file = os.path.join(auth_root, f"{user}__at__{service}_t.txt")
+    try:
+        os.remove(dist_file)
+    except:  # noqa
+        pass

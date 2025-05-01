@@ -2,14 +2,14 @@ import os
 import sys
 import uvicorn
 import logging
-from src.framework.config import DEBUG
+from src.framework.config import DEBUG, LOG_FILE
 
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s]: %(message)s",
     handlers=[
-        logging.FileHandler('logs/app.log'),
+        logging.FileHandler(LOG_FILE),
         logging.StreamHandler(sys.stdout),
     ],
 )

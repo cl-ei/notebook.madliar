@@ -417,6 +417,11 @@ class GlobalLock:
         self.__identification: str = f"{uuid.uuid4()}"
 
     async def __aenter__(self):
+        if not REDIS_URL:
+            # 未配置redis的情况下，直接加锁成功
+            self.__locked = True
+            return self
+
         acquire_times = 0
         while True:
             lock_success = await self.redis.set_if_not_exists(
@@ -437,7 +442,7 @@ class GlobalLock:
             await asyncio.sleep(self._retry_interval)
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if not self.__locked:
+        if not REDIS_URL or not self.__locked:
             return
 
         await self.redis.execute(
