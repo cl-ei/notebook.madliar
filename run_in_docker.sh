@@ -9,6 +9,6 @@ docker run -itd \
   --restart=always \
   --name ${DOCKER_NAME} \
   --net=host \
-  -e REDIS_URL=${REDIS_URL} \
-  -v /data/nvme/notebook_user:/data/storage \
+  -e STORAGE_ROOT="/storage_root" \
+  -v /data/nvme/notebook_user:/storage_root \
   ${DOCKER_IMAGE}
