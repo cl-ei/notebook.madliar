@@ -10,11 +10,11 @@
 
     <link rel="stylesheet" href="{{ CDN_URL }}/notebook/static/css/bootstrap.min.css">
     <link rel="stylesheet" href="{{ CDN_URL }}/notebook/static/css/font-awesome.min.css">
-    <link rel="stylesheet" href="{{ CDN_URL }}/notebook/static/notebook/share.css">
+    <link rel="stylesheet" href="{{ CDN_URL }}/notebook/static/notebook/main.css">
 </head>
 <body>
 <div class="share-container">
-    <div class="post-content {% if not need_trans %}keep-space{% endif %}" id="article-detail">{{ content }}</div>
+    <div class="post-content {% if not need_trans %}keep-space{% endif %}" id="content-text">{{ content }}</div>
 </div>
 <script>window.CDN_URL = "{{ CDN_URL }}";</script>
 
@@ -57,7 +57,7 @@
                 }
             }
         }
-        var articleDom = $("#article-detail");
+        var articleDom = $("#content-text");
         articleDom.html(marked(articleDom.text()));
     })
 </script>
