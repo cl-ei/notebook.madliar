@@ -57,12 +57,12 @@ async def register(request):
     email = request.body.get("email")
     password = request.body.get("password", "")
 
-    # if not DEBUG:
-    #     return {
-    #         "code": 400,
-    #         "msg": "由于此站点遭受攻击，不再支持注册。你可以自行部署此网站的开源版本，具体请访问："
-    #                '<a href="https://github.com/cl-ei/notebook.madliar">https://github.com/cl-ei/notebook.madliar</a>'
-    #     }
+    if not DEBUG:
+        return {
+            "code": 400,
+            "msg": "由于此站点遭受攻击，不再支持注册。你可以自行部署此网站的开源版本，具体请访问："
+                   '<a href="https://github.com/cl-ei/notebook.madliar">https://github.com/cl-ei/notebook.madliar</a>'
+        }
 
     email_pattern = re.compile(r"^[A-Za-z\d]+([-_.][A-Za-z\d]+)*@([A-Za-z\d]+[-.])+[A-Za-z\d]{2,4}$")
     if not email_pattern.match(email):
