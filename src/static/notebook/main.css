@@ -21,10 +21,9 @@ a{
     transition: all 0.3s ease-out;
     outline: none;
 }
-a:hover{
-    border-bottom: 1px solid #777;
-}
 a:focus, a:hover{
+    color: #000;
+    border-bottom: 1px solid #000;
     text-decoration: none !important;
 }
 input{

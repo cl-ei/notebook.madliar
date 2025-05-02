@@ -301,44 +301,59 @@ $.cl = {
         localStorage.docVer = undefined;
         localStorage.docBase = undefined;
         $.cl.docBaseContent = "";
+        $.cl.lastSavedContent = undefined;
+    },
+    jstNodeOpenCb: {}, // nodeId -> [function (node) {}]
+    registerJstNodeOpenCb: function (nodeId, cb) {
+        if (nodeId in $.cl.jstNodeOpenCb) {
+            $.cl.jstNodeOpenCb[nodeId].push(cb);
+        } else {
+            $.cl.jstNodeOpenCb[nodeId] = [cb];
+        }
+    },
+    onJstreeNodeOpen: function (e, node) {
+        if (node.id in $.cl.jstNodeOpenCb) {
+            for (let j = 0; j < $.cl.jstNodeOpenCb[node.id].length; j++) {
+                let cb = $.cl.jstNodeOpenCb[node.id].pop();
+                cb(node);
+            }
+        }
     },
 
     openJstreeNode: function (nodeId){
-        let layers = [];
-        if(nodeId !== "/"){
-            layers = nodeId.substring(1, nodeId.length).split("/");
-        }
+        // nodeId 如 "/VVV/a.md"
         let jst = $("#jstree").jstree();
 
-        function recursionOpenJstreeNode(layer){
-            if (layer > layers.length){
-                return;
-            }
+        // 从根节点往叶子节点寻找，如果是展开的，则往叶子节点寻找，否则展开此节点
 
-            let thisNode = "/";
-            if (layer > 0){
-                let lys = [];
-                for (let i = 0; i < layer; i++){
-                    lys.push(layers[i]);
+        let searchNode = jst.get_node("/");
+        let toOpen = undefined;
+
+        while (searchNode !== undefined) {
+            if (searchNode.state.opened === false) {
+                toOpen = searchNode;
+                break;
+            }
+            let nextLoop = undefined;
+            for (const child of searchNode.children) {
+                let childNode = jst.get_node(child)
+                if (childNode.type === "folder" && nodeId.indexOf(childNode.id + "/") >= 0) {
+                    // 找到了要展开的孩子
+                    nextLoop = childNode
+                    break;
                 }
-                thisNode = "/" + lys.join("/");
             }
-
-            let node = jst.get_node(thisNode);
-            if (node === false) {
-                return
-            }
-            if (node.state.opened === true){
-                // 本节点已经展开，直接进入下一层
-                recursionOpenJstreeNode(layer + 1);
-            } else {
-                // 展开本节点，并进入下一层
-                $("#jstree").on("open_node.jstree", function(){
-                    recursionOpenJstreeNode(layer + 1);
-                }).jstree().open_node(thisNode);
-            }
+            searchNode = nextLoop;  // 下一轮次继续搜索
         }
-        recursionOpenJstreeNode(0);
+        if (toOpen === undefined) {
+            $("#jstree").jstree('select_node', nodeId);
+            return;
+        }
+        // 注册回调，展开这个节点
+        $.cl.registerJstNodeOpenCb(toOpen.id, (node) => {
+            $.cl.openJstreeNode(nodeId);
+        })
+        jst.open_node(toOpen.id);
     },
     showMkdirDialog: function(nodeId){
         var onMkdirDialogConfirmBtnClicked = function (){
@@ -583,6 +598,7 @@ $.cl = {
                 resultContents.push(baseContent.substring(index))
                 renderContent = resultContents.join("");
             }
+            $.cl.clearCurrentDoc();
             $.cl.setCurrentDoc({path: nodeId, version: data.version, base: data.base, baseContent: baseContent});
             $.cl.renderCurrentEditDocumentTitle();
             document.getElementById('input-text-area').value = renderContent;
@@ -608,7 +624,6 @@ $.cl = {
         })
     },
     renderJstreeContextMenu: function(node){
-        console.log("ContextMenu: ",node);
         var selectedNodeId = node.id;
         if (node.type !== "folder") {
             return {
@@ -678,7 +693,7 @@ $.cl = {
                 }
             }
         };
-        if (selectedNodeId === "/blog") {
+        if (selectedNodeId === "/blog" || selectedNodeId === "blog") {
             returnDat["get_blog_ver"] = {
                 "label": "查看详情",
                 "action": function () {
@@ -751,17 +766,17 @@ $.cl = {
             if (curDoc.path !== undefined && curDoc.path.length > 0){
                 $.cl.openFile(curDoc.path);
                 $.cl.openJstreeNode(curDoc.path);
-            } else {
-                $.cl.openJstreeNode("/");
             }
-        }).on("select_node.jstree", function (e, node){
+        }).on("select_node.jstree", function (e, node) {
             if (["text", "md", "img"].indexOf(node.node.type) < 0) {
                 return;
             }
             var selectedNodeId = node.node.id;
-            if ($.cl.getCurrentDoc().path !== selectedNodeId){
+            if ($.cl.getCurrentDoc().path !== selectedNodeId) {
                 $.cl.openFile(selectedNodeId);
             }
+        }).on("open_node.jstree", function (e, node) {
+            $.cl.onJstreeNodeOpen(e, node.node);
         }).jstree({
             core: {
                 multiple: false,
@@ -895,6 +910,8 @@ $.cl = {
             return;
         }
         $.cl.onSaveContent = true;
+        $.cl.lastSavedContent = content;
+        $.cl.lastSavedTime = Date.now();
         $.cl.drawSavingAnimation();
 
         $.cl.sendRequest(reqData, function (data) {
@@ -1020,6 +1037,8 @@ $.cl = {
     },
     daemonToTransMdId: undefined,
     oldContent: undefined,
+    lastSavedTime: 0,
+    lastSavedContent: undefined,
     daemonToTransMd: function (){
         // 定时将mark down转换为html
         return setInterval(function(){
@@ -1028,6 +1047,13 @@ $.cl = {
                 $.cl.oldContent = newContent;
                 $("#content-text").html(marked(newContent));
                 hljs.highlightAll();
+            }
+            let current = Date.now();
+            if ($.cl.lastSavedContent === undefined) {
+                $.cl.lastSavedContent = newContent;
+            }
+            if ($.cl.lastSavedContent !== newContent && (current - $.cl.lastSavedTime) >= (1000 * 5)) {
+                $("#save-btn").trigger("click");
             }
         }, 400);
     },
@@ -1170,8 +1196,7 @@ $.cl = {
                     let curDoc = $.cl.getCurrentDoc();
                     let index = curDoc.path.lastIndexOf("/");
                     let parentPath = curDoc.path.slice(0, index);
-                    console.log("parentPath: ", parentPath);
-                    return "/notebook/img_preview/" + username + "/" + service + parentPath + "/" + href;
+                    return "/notebook/img_preview/" + username + "/" + service + "/" + parentPath + "/" + href;
                 }
             }
         }

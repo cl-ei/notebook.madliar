@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse, Response
 from src.utils import render_to_html
 from src.db.query.auth import AuthMgr
 from src.operation.api_handler import SupportedAction, CustomRequest
-from src.operation.data_io import get_share, get_original_file, get_if_shared
+from src.operation.data_io import get_share, get_original_file
 from src.framework import error
 
 
@@ -111,13 +111,12 @@ async def img_preview(
     email = f"{email_user}@{email_service}"
 
     try:
-        login_info = await AuthMgr.varify_token(token)
+        login_info = await AuthMgr.varify_token(email, token)
         login_email = login_info.email
     except Exception:  # noqa
         login_email = None
     if login_email != email:
-        if not await get_if_shared(email, file):
-            raise error.Forbidden()
+        raise error.Forbidden()
 
     mimetype, content = await get_original_file(email, file)
     if not isinstance(mimetype, str) or "image/" not in mimetype:

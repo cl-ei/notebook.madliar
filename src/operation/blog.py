@@ -7,7 +7,7 @@ import datetime
 import os.path
 import shutil
 import time
-
+from pathlib import Path
 import jinja2
 from typing import *
 from multiprocessing import Process
@@ -98,20 +98,20 @@ class BlogBuilder:
 
         return target_file_name
 
-    def parse_body(self, base: str, body: str, header: ArticleHeader, user: str, service: str) -> str:
+    def parse_body(self, email, md_file: Path, body: str, header: ArticleHeader) -> str:
         """
         在这里处理 body，寻找图片、替换路径并移动到static文件夹
 
         Args
         ----
-        base: md 文件所在的路径
+        email: 从属于的用户
+        md_file: 包含绝对路径
         body: md body部分
         header: 此文章的 header
-        user: user
-        service: service
         """
-        his_storage_root = os.path.join(STORAGE_ROOT, f"{user}@{service}")
-        his_blog_root = os.path.join(BLOG_ROOT, user, service)
+        user, service = email.split("@", 1)
+        user_storage_root = Path(STORAGE_ROOT) / email / "storage"
+        user_blog_root = Path(BLOG_ROOT) / user / service
 
         matches = re.findall(r"(!\[[^\n]*?\]\([^\n]+?\))", body)
         replace_map: Dict[str, str] = {}
@@ -132,16 +132,19 @@ class BlogBuilder:
             # 如果是以 "/" 开头，则图片文件在 用户 "storage_root" 下拼接
             # 否则，以当前文档路径下拼接
             if img_path.startswith("/"):
-                physical_img_path = os.path.join(his_storage_root, img_path.lstrip("/"))
+                # 此时 "/" 代表的是用户的 storage root
+                physical_img_path = user_storage_root / img_path.lstrip("/")
             else:
-                physical_img_path = os.path.join(base, img_path)
+                # 这种情况，![](href) 中的 href 是与 md 同级的文件
+                physical_img_path = md_file.parent / img_path
 
-            if not os.path.isfile(physical_img_path):
+            if not physical_img_path.exists() or not physical_img_path.is_file():
+                logging.debug(f"cannot find file: {physical_img_path}")
                 continue
 
             file_name = self.move_image_and_calc_md5(
-                source=physical_img_path,
-                dist_root=os.path.join(his_blog_root, "img"),
+                source=str(physical_img_path),
+                dist_root=str(user_blog_root / "img"),
             )
             img_uri = f"/notebook/publish/{user}/{service}/img/{file_name}"
             replace_map[m] = m[:path_start_index] + img_uri + ")"
@@ -168,23 +171,16 @@ class BlogBuilder:
             create_param[key] = value
         return create_param
 
-    def parse_one_md(
-            self, md_file: str, source_root, write_root: str, user: str, service: str,
-    ) -> Optional[Article]:
+    def parse_one_md(self, email: str, md_file: Path, write_root: Path) -> Optional[Article]:
         """
         解析博客
 
         1. 解析一篇文章，写 html
         2. 返回 meta
         """
-        # source_root: ./storage/i@caoliang.net/blog/2023-03-14/modify_nginx.md
-        # rel_path: 2023-03-14/modify_nginx.md
-        rel_path = md_file.replace(source_root, "").lstrip("/")
+        user_storage_root = Path(STORAGE_ROOT) / email / "storage"
 
-        inner_file = data_io.openfile(
-            email=f"{user}@{service}",
-            file=os.path.join("blog", rel_path)
-        )
+        inner_file = data_io.openfile(email=email, file=str(md_file.relative_to(user_storage_root)))
         content = data_io.merge_content(inner_file.base_content, inner_file.diff)
         inner = content.strip("\r\n").lstrip("---").lstrip("\r\n")
         try:
@@ -207,10 +203,11 @@ class BlogBuilder:
         header = ArticleHeader(identity=article_id, **header_dict)
 
         base, _ = os.path.split(md_file)
-        parsed_body = self.parse_body(base, body, header, user, service)
+        parsed_body = self.parse_body(email, md_file, body, header)
         article = Article(content=parsed_body, **header.dict())
 
         # 写 html
+        user, service = email.split("@", 1)
         html_content = jinja2.Template(self.tpl).render({
             "page": "article",
             "article": article,
@@ -272,27 +269,26 @@ class BlogBuilder:
         1. 创建 BLOG_ROOT/{email_user}/{service}/version.txt
         2. 找寻所有的 md 文件
         """
-        user, service = email.split("@", 1)
-        now = str(datetime.datetime.now())
-
         # 存放生成好的静态资源的额 root 目录
-        write_root = os.path.join(BLOG_ROOT, user, service)
+        user, service = email.split("@", 1)
+        write_root = Path(BLOG_ROOT) / user / service
         logging.debug(f"start generate blog html files for email: {email}, write to ->\n\t{write_root}")
         try:
-            shutil.rmtree(write_root)
+            shutil.rmtree(str(write_root))
         except:  # noqa
             pass
+        write_root.mkdir(exist_ok=True, parents=True)
+        version_file = write_root / "version.txt"
+        version_file.touch(exist_ok=True)
+        version_file.write_text(str(datetime.datetime.now()))
 
-        utils.safe_make_dir(write_root)
-        with open(os.path.join(write_root, "version.txt"), "w") as f:
-            f.write(now)
-
-        # 寻找所有的 md 文件 并生成每个的 html
+        # 寻找所有的 md 文件 并为每个md生成html
         all_article_list: List[Article] = []
-        source_root = os.path.join(STORAGE_ROOT, email, "blog")
-        all_md_files = self.find_all_md_file_under_blog(source_root)
-        for file in all_md_files:
-            meta = self.parse_one_md(file, source_root, write_root, user, service)
+        source_root = Path(STORAGE_ROOT) / email / "storage" / "blog"
+        for md_file in source_root.rglob("*.md"):
+            # md_file 包含绝对路径
+            logging.debug(f"process md_file: {md_file}")
+            meta = self.parse_one_md(email, md_file, write_root)
             if not meta:
                 continue
             all_article_list.append(meta)

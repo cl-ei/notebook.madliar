@@ -4,6 +4,7 @@ import logging
 import mimetypes
 import os
 import shutil
+from pathlib import Path
 from pydantic import BaseModel, BaseConfig
 from typing import *
 from src.framework.config import DEBUG, STORAGE_ROOT, BLOG_ROOT
@@ -13,12 +14,29 @@ from src.framework.error import ErrorWithPrompt, NotFound
 
 storage_root = STORAGE_ROOT
 """
-隐藏文件:
-1. 在文件同级目录，有 "{file_name}.meta"的文件夹，存储该文件的元信息
-file:   - {storage_root}/{email}/user_root/readme.md
-meta:   - {storage_root}/{email}/user_root/readme.md.meta/
- * share.txt - 创建过的分享
-2. 每个用户下有 "/blog.meta" 的文件夹，存储 blog 的索引
+目录结构
+
+STORAGE_ROOT
+├── blog  (因为 blog 必须静态挂载)
+│    ├── i@caoliang.net
+│   ...   ├── version.txt
+│         ├── xxx.html
+│
+├── i@caoliang.net
+│    ├── auth
+│    │    ├── pass.txt
+│    │    └── tokens.txt
+│    ├── storage
+│    │    ├── readme.md (file)
+│    │    ├── blog
+│    │    ...
+│    └── meta
+│         ├── readme.md (dir)
+│         │      ├── index.json
+│         │      ├── v1
+│         │      ├── b1
+│         │      │
+...       ...    ...
 """
 
 
@@ -63,7 +81,7 @@ class IndexFile(RWModel):
     def parse_file(cls, file: str) -> IndexFileT:
         try:
             return super().parse_file(file)
-        except FileNotFoundError:
+        except (FileNotFoundError, json.decoder.JSONDecodeError):
             return cls()
 
 
@@ -111,38 +129,31 @@ def merge_content(base_content: str, diff: List) -> str:
 
 
 async def mkdir(email: str, path: str):
-    _, last_dir = os.path.split(path)
-    if last_dir.endswith(".meta"):
-        raise ErrorWithPrompt("名称不可以\".meta\"结尾")
-
-    dist = os.path.join(storage_root, email, path.lstrip("/"))
-    os.makedirs(dist, exist_ok=True)
+    dist = Path(STORAGE_ROOT) / email / "storage" / path.lstrip("/")
+    dist.mkdir(parents=True, exist_ok=True)
 
 
 async def listdir(email: str, path: str) -> List[FileLike]:
-    dist = os.path.join(storage_root, email, path.lstrip("/"))
-    result: Dict[str, List[FileLike]] = {}
-    try:
-        files = os.listdir(dist)
-    except FileNotFoundError:
+    user_storage_root = Path(STORAGE_ROOT) / email / "storage"
+    curr_dir = user_storage_root / path.lstrip("/")
+    if not curr_dir.exists():
         return []
 
-    for f in files:
-        full = os.path.join(dist, f)
-        if os.path.isdir(full):
-            if f.endswith(".meta"):
-                continue
+    result: Dict[str, List[FileLike]] = {}
+    for child in curr_dir.iterdir():
+        if child.is_dir():
             filetype = "folder"
-            result.setdefault(filetype, []).append(FileLike(id=os.path.join(path, f), type=filetype, text=f))
-        if os.path.isfile(full):
-            if "." in f:
-                ext = f.split(".")[-1]
+        elif child.is_file():
+            if child.suffix:
+                ext = child.suffix.lstrip(".")
                 filetype = utils.get_file_type(ext)
             else:
                 filetype = "bin"
-            result.setdefault(filetype, []).append(
-                FileLike(id=os.path.join(path, f), type=filetype, text=f, children=False)
-            )
+        else:
+            continue
+        jstree_id = "/" + child.relative_to(user_storage_root).as_posix()
+        this_item = FileLike(id=jstree_id, type=filetype, text=child.name, children=bool(filetype == "folder"))
+        result.setdefault(filetype, []).append(this_item)
 
     # 排序，folder优先在上，其他的子类按名称排序
     return_data = []
@@ -155,7 +166,9 @@ async def listdir(email: str, path: str) -> List[FileLike]:
 
 
 async def rm(email: str, path: str):
-    dist = os.path.join(storage_root, email, path.lstrip("/"))
+    delete_path = Path(STORAGE_ROOT) / email / "storage" / path.lstrip("/")
+    dist = str(delete_path)
+
     if not os.path.exists(dist):
         return
     if os.path.isdir(dist):
@@ -167,32 +180,30 @@ async def rm(email: str, path: str):
 
 
 async def newfile(email: str, file: str):
-    dist = os.path.join(storage_root, email, file.lstrip("/"))
-    path, _ = os.path.split(dist)
-    os.makedirs(path, exist_ok=True)
-    with open(dist, "w") as _:
-        ...
-    return
+    dist = Path(STORAGE_ROOT) / email / "storage" / file.lstrip("/")
+    dist.parent.mkdir(exist_ok=True)
+    dist.touch(exist_ok=True)
 
 
 async def rename(email: str, old_path: str, new_name: str):
-    dist = os.path.join(storage_root, email, old_path.lstrip("/"))
-    if not os.path.exists(dist):
+    origin = Path(STORAGE_ROOT) / email / "storage" / old_path.lstrip("/")
+    if not origin.exists():
         raise ErrorWithPrompt("路径不存在")
-    if os.path.isdir(dist) and new_name.endswith(".meta"):
-        raise ErrorWithPrompt("名称不可以\".meta\"结尾")
-
-    path, _ = os.path.split(dist)
-    new_path = os.path.join(path, new_name)
-    os.rename(dist, new_path)
+    new_path = origin.parent / new_name
+    os.rename(str(origin), str(new_path))
 
     # 重命名meta
-    logging.info(f"rename {dist}.meta => {new_path}.meta")
-    if os.path.isfile(new_path) and os.path.isdir(f"{dist}.meta"):
-        os.rename(f"{dist}.meta", f"{new_path}.meta")
+    if not new_path.is_file():
+        return
+    old_meta = Path(STORAGE_ROOT) / email / "meta" / old_path.lstrip("/")
+    if not old_meta.exists():
+        return
+    new_meta = old_meta.parent / new_name
+    logging.debug(f"rename old meta: {old_meta} => {new_meta}")
+    os.rename(f"{old_meta}", f"{new_meta}")
 
 
-def _get_file_by_version(file: str, version: int) -> FileOpenRespData:
+def _get_file_by_version(email: str, file: str, version: int) -> FileOpenRespData:
     """
     通过 version file 还原 全量文件
 
@@ -208,38 +219,40 @@ def _get_file_by_version(file: str, version: int) -> FileOpenRespData:
     if version < 0:
         raise ErrorWithPrompt(f"文件版本({version})不存在")
 
+    origin_file = Path(STORAGE_ROOT) / email / "storage" / file.lstrip("/")
     if version == 0:
         try:
-            with open(file, "rb") as f:
-                bin_content = f.read()
-            content = bin_content.decode("utf-8")
+            content = origin_file.read_text(encoding="utf-8", errors="replace")
         except FileNotFoundError:
             raise ErrorWithPrompt("文件不存在")
-        except UnicodeDecodeError:
-            raise ErrorWithPrompt("文件编码错误，请使用utf-8编码")
-
         return FileOpenRespData(version=0, base=0, base_content=content)
 
-    meta_path = f"{file}.meta"
+    meta_path = Path(STORAGE_ROOT) / email / "meta" / file.lstrip("/")
+
+    # meta_path = f"{file}.meta"
     try:
-        vf = VersionFile.parse_file(os.path.join(meta_path, f"v{version}"))
+        target_version = str(meta_path / f"v{version}")
+        vf = VersionFile.parse_file(target_version)
     except FileNotFoundError:
         raise ErrorWithPrompt(f"文件版本({version})不存在")
 
     # 读取 base 文件
-    base_file = os.path.join(meta_path, f"b{vf.base}") if vf.base > 0 else file
+    if vf.base > 0:
+        base_file = meta_path / f"b{vf.base}"
+    else:
+        base_file = origin_file
+    if not base_file.exists() or not base_file.is_file():
+        raise ErrorWithPrompt("base文件解析错误")
+
     try:
-        with open(base_file, "rb") as f:
-            bin_content = f.read()
-        content = bin_content.decode("utf-8")
+        content = base_file.read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
         raise ErrorWithPrompt("该版本源文件已不存在")
-    except UnicodeDecodeError:
-        raise ErrorWithPrompt("文件编码错误，请使用utf-8编码")
+
     return FileOpenRespData(version=version, base=vf.base, base_content=content, diff=vf.diff)
 
 
-def _get_last_vb_of_file(file) -> Tuple[Optional[int], Optional[int]]:
+def _get_last_vb_of_file(email: str, file: str) -> Tuple[Optional[int], Optional[int]]:
     """
     当 version 或者 base file 不存在时，返回 0。按照约定，0代表原文件
 
@@ -248,13 +261,13 @@ def _get_last_vb_of_file(file) -> Tuple[Optional[int], Optional[int]]:
     version: int
     base: int
     """
-    meta_path = f"{file}.meta"
-    index_file = os.path.join(meta_path, "index.json")
+    meta_path = Path(STORAGE_ROOT) / email / "meta" / file.lstrip("/")
+    index_file = meta_path / "index.json"
     last_version = 0
     last_base = 0
 
     try:
-        index_f: IndexFile = IndexFile.parse_file(index_file)
+        index_f: IndexFile = IndexFile.parse_file(str(index_file))
     except FileNotFoundError:
         return 0, 0
     for v in index_f.versions:
@@ -263,11 +276,6 @@ def _get_last_vb_of_file(file) -> Tuple[Optional[int], Optional[int]]:
         if v.version > last_version:
             last_version = v.version
     return last_version, last_base
-
-
-async def get_if_shared(email: str, file: str) -> bool:
-    shared_file = os.path.join(storage_root, email, f"{file.lstrip('/')}.meta", "share.txt")
-    return os.path.isfile(shared_file)
 
 
 def openfile(email: str, file: str, version: int = None) -> FileOpenRespData:
@@ -282,14 +290,16 @@ def openfile(email: str, file: str, version: int = None) -> FileOpenRespData:
             base_content: str
             diff: List[DiffItem] = []
     """
-    dist = os.path.join(storage_root, email, file.lstrip("/"))
-    if not os.path.exists(dist) or not os.path.isfile(dist):
+    dist = Path(STORAGE_ROOT) / email / "storage" / file.lstrip("/")
+    if not dist.exists() or not dist.is_file():
         raise ErrorWithPrompt("文件不存在")
+
     logging.info(f"get version: {version}")
     if version is None:
-        version, _ = _get_last_vb_of_file(dist)
+        version, _ = _get_last_vb_of_file(email, file)
+
     logging.info(f"get last version: {version}")
-    return _get_file_by_version(dist, version)
+    return _get_file_by_version(email, file, version)
 
 
 async def savefile(email: str, file: str, content: Union[str, bytes], create=False) -> Tuple[int, int]:
@@ -311,47 +321,47 @@ async def savefile(email: str, file: str, content: Union[str, bytes], create=Fal
     else:
         bin_content = content
 
-    dist = os.path.join(storage_root, email, file.lstrip("/"))
-    meta_path = f"{dist}.meta"
-    if not os.path.exists(dist) or not os.path.isfile(dist):
+    dist_file = Path(STORAGE_ROOT) / email / "storage" / file.lstrip("/")
+    meta_path = Path(STORAGE_ROOT) / email / "meta" / file.lstrip("/")
+    if not dist_file.exists() or not dist_file.is_file():
         if not create:
             raise ErrorWithPrompt("文件不存在")
-
         # 创建新文件。只有 upload 接口才会触发至此，未创建就保存文件。此时应当清除 meta 文件夹
-        parent, _ = os.path.split(dist)
-        os.makedirs(parent, exist_ok=True)
-        with open(dist, "wb") as f:
-            f.write(bin_content)
-        if os.path.exists(meta_path):
-            shutil.rmtree(meta_path)
+        dist_file.parent.mkdir(exist_ok=True, parents=True)
+        dist_file.touch(exist_ok=True)
+        dist_file.write_bytes(bin_content)
+
+        if meta_path.exists():
+            shutil.rmtree(str(meta_path))
         return 0, 0
 
     # 创建
     # 寻找最新版本
-    last_version, last_base = _get_last_vb_of_file(dist)
+    last_version, last_base = _get_last_vb_of_file(email, file)
     target_version, target_base = last_version + 1, last_base + 1
 
     # 创建base
-    os.makedirs(meta_path, exist_ok=True)
-    with open(os.path.join(meta_path, f"b{target_base}"), "wb") as f:
-        f.write(bin_content)
+    meta_path.mkdir(exist_ok=True, parents=True)
+    base_file = meta_path / f"b{target_base}"
+    base_file.touch(exist_ok=True)
+    base_file.write_bytes(bin_content)
 
     # 创建version
     now = datetime.datetime.now()
     version_data = VersionFile(base=target_base, create_time=now)
-    with open(os.path.join(meta_path, f"v{target_version}"), "wb") as f:
-        f.write(version_data.json(ensure_ascii=False).encode("utf-8"))
+    version_file = meta_path / f"v{target_version}"
+    version_file.touch(exist_ok=True)
+    version_file.write_text(version_data.json(ensure_ascii=False).encode("utf-8"))
 
     # 更新 index
-    index_filename = os.path.join(meta_path, "index.json")
-    index_f: IndexFile = IndexFile.parse_file(index_filename)
+    index_file = meta_path / "index.json"
+    index_f: IndexFile = IndexFile.parse_file(str(index_file))
     index_f.versions.append(VersionBrief(version=target_version, base=target_base, create_time=now))
-    with open(index_filename, "wb") as f:
-        f.write(index_f.json(ensure_ascii=False).encode("utf-8"))
+    index_file.write_bytes(index_f.json(ensure_ascii=False).encode("utf-8"))
     return target_version, target_base
 
 
-async def savefile_delta(email: str, path: str, base: int, dist_md5: str, diff: List[DiffItem]) -> Tuple[int, int]:
+async def savefile_delta(email: str, file: str, base: int, dist_md5: str, diff: List[DiffItem]) -> Tuple[int, int]:
     """
     增量保存文件
 
@@ -368,26 +378,24 @@ async def savefile_delta(email: str, path: str, base: int, dist_md5: str, diff: 
     version: int 版本号
     base: int, rebuild 之后的 base
     """
-    file = os.path.join(storage_root, email, path.lstrip("/"))
-    meta_path = os.path.join(f"{file}.meta")
-    base_file = os.path.join(meta_path, f"b{base}") if base > 0 else file
+    origin_file = Path(STORAGE_ROOT) / email / "storage" / file.lstrip("/")
+    meta_path = Path(STORAGE_ROOT) / email / "meta" / file.lstrip("/")
+    meta_path.mkdir(exist_ok=True, parents=True)
+    base_file = (meta_path / f"b{base}") if base > 0 else origin_file
+
     try:
-        with open(base_file, "rb") as f:
-            bin_content = f.read()
-        content = bin_content.decode("utf-8")
+        content = base_file.read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
         raise ErrorWithPrompt("原文件不存在")
-    except UnicodeDecodeError:
-        raise ErrorWithPrompt("文件编码错误")
 
     target_content = merge_content(content, diff)
     result_md5 = utils.calc_md5(target_content)
     if result_md5 != dist_md5:
         raise ErrorWithPrompt("文件不一致")
 
-    version, max_base = _get_last_vb_of_file(file)
+    version, max_base = _get_last_vb_of_file(email, file)
     target_version = version + 1
-    os.makedirs(meta_path, exist_ok=True)
+
     now = datetime.datetime.now()
     if (
         (target_version > 0 and target_version % 10 == 0) or
@@ -398,44 +406,44 @@ async def savefile_delta(email: str, path: str, base: int, dist_md5: str, diff: 
         target_base = target_version
 
         # save base file
-        target_base_file = os.path.join(meta_path, f"b{target_base}")
-        os.makedirs(meta_path, exist_ok=True)
-        with open(target_base_file, "wb") as f:
-            f.write(target_content.encode("utf-8"))
-        # save version file
+        target_base_file = meta_path / f"b{target_base}"
+        target_base_file.touch(exist_ok=True)
+
+        target_base_file.write_bytes(target_content.encode("utf-8"))
         vf = VersionFile(base=target_base, diff=[], create_time=now)
 
     else:
         target_base = base
         vf = VersionFile(base=base, diff=diff, create_time=now)
 
-    with open(os.path.join(meta_path, f"v{target_version}"), "wb") as f:
-        f.write(vf.json(ensure_ascii=False).encode("utf-8"))
+    version_file = meta_path / f"v{target_version}"
+    version_file.touch(exist_ok=True)
+    version_file.write_bytes(vf.json(ensure_ascii=False).encode("utf-8"))
 
     # 更新 index file
-    index_filename = os.path.join(meta_path, "index.json")
-    index_f: IndexFile = IndexFile.parse_file(index_filename)
+    index_file = meta_path / "index.json"
+    index_file.touch(exist_ok=True)
+
+    index_f: IndexFile = IndexFile.parse_file(str(index_file))
     index_f.versions.append(VersionBrief(
         version=target_version, base=target_base, create_time=now,
         lines=len([d for d in diff if d.added is True or d.removed is True])
     ))
-    with open(index_filename, "wb") as f:
-        f.write(index_f.json(ensure_ascii=False).encode("utf-8"))
+    index_file.write_bytes(index_f.json(ensure_ascii=False).encode("utf-8"))
 
     return target_version, target_base
 
 
 async def create_share(email: str, file: str):
     """创建文件分享"""
-    rel_file_path = file.lstrip("/")
-    dist_file = os.path.join(storage_root, email, rel_file_path)
-    if not os.path.exists(dist_file) or not os.path.isfile(dist_file):
+    dist_file = Path(STORAGE_ROOT) / email / "storage" / file.lstrip("/")
+    if not dist_file.exists() or not dist_file.is_file():
         raise ErrorWithPrompt("文件不存在")
 
-    meta_path = dist_file + ".meta"
-    os.makedirs(meta_path, exist_ok=True)
-    with open(os.path.join(meta_path, "share.txt"), "w") as _:
-        ...
+    meta_path = Path(STORAGE_ROOT) / email / "meta" / file.lstrip("/")
+    meta_path.mkdir(exist_ok=True, parents=True)
+    share_file = meta_path / "share"
+    share_file.touch(exist_ok=True)
     return True
 
 
@@ -447,59 +455,52 @@ async def get_share(email: str, file: str) -> Tuple[str, Union[str, bytes]]:
     mimetype: str, 文件类型
     content: str or bytes, 文件内容
     """
-    rel_file_path = file.lstrip("/")
-    share_meta = os.path.join(storage_root, email, f"{rel_file_path}.meta", "share.txt")
-    if not os.path.exists(share_meta) or not os.path.isfile(share_meta):
+    meta_path = Path(STORAGE_ROOT) / email / "meta" / file.lstrip("/")
+    share_flag = meta_path / "share"
+    if not share_flag.exists() or not share_flag.exists():
         raise NotFound()
 
-    dist_file = os.path.join(storage_root, email, rel_file_path)
-    mimetype, _ = mimetypes.guess_type(dist_file)
+    dist_file = Path(STORAGE_ROOT) / email / "storage" / file.lstrip("/")
+    mimetype, _ = mimetypes.guess_type(str(dist_file))
     if isinstance(mimetype, str) and mimetype.startswith("image/"):
-        with open(dist_file, "rb") as f:
-            bin_content = f.read()
+        bin_content = dist_file.read_bytes()
         return mimetype, bin_content
 
-    version, base = _get_last_vb_of_file(dist_file)
+    version, base = _get_last_vb_of_file(email, file)
     if version == 0:
-        with open(dist_file, "rb") as f:
-            content = f.read().decode("utf-8")
-    else:
-        version_file = os.path.join(f"{dist_file}.meta", f"v{version}")
-        with open(version_file, "rb") as f:
-            vf = VersionFile(**json.loads(f.read()))
-        base_file = dist_file if vf.base == 0 else os.path.join(f"{dist_file}.meta", f"b{base}")
-        with open(base_file, "rb") as f:
-            base_content = f.read().decode("utf-8")
-        content = merge_content(base_content, vf.diff)
+        content = dist_file.read_text(encoding="utf-8", errors="replace")
+        return mimetype or "", content
 
+    version_file = meta_path / f"v{version}"
+    vf = VersionFile(**json.loads(version_file.read_bytes()))
+    base_file = dist_file if vf.base == 0 else (meta_path / f"v{base}")
+    base_content = base_file.read_text(encoding="utf-8", errors="replace")
+    content = merge_content(base_content, vf.diff)
     return mimetype or "", content
 
 
 async def get_original_file(email: str, file: str) -> Tuple[str, bytes]:
-    dist_file = os.path.join(storage_root, email, file)
-    if not os.path.isfile(dist_file):
+    dist_file = Path(STORAGE_ROOT) / email / "storage" / file.lstrip("/")
+    if not dist_file.exists():
         raise NotFound()
 
-    mimetype, _ = mimetypes.guess_type(dist_file)
-    with open(dist_file, "rb") as f:
-        bin_content = f.read()
-    return mimetype, bin_content
+    mimetype, _ = mimetypes.guess_type(str(dist_file))
+    return mimetype, dist_file.read_bytes()
 
 
 async def get_history(email: str, file: str) -> List[VersionBrief]:
-    index_file = os.path.join(storage_root, email, f"{file.lstrip('/')}.meta", "index.json")
+    index_file = Path(STORAGE_ROOT) / email / "meta" / file.lstrip("/") / "index.json"
     try:
-        data: IndexFile = IndexFile.parse_file(index_file)
+        data: IndexFile = IndexFile.parse_file(str(index_file))
     except FileNotFoundError:
         raise ErrorWithPrompt("没有版本历史")
     return sorted(data.versions, key=lambda x: x.version, reverse=True)
 
 
 async def get_diff(email: str, file: str, version: int) -> DiffResp:
-    dist_file = os.path.join(storage_root, email, file.lstrip("/"))
-    meta_path = f"{dist_file}.meta"
-    index_file = os.path.join(meta_path, "index.json")
-    index_data: IndexFile = IndexFile.parse_file(index_file)
+    meta_path = Path(STORAGE_ROOT) / email / "meta" / file.lstrip("/")
+    index_file = meta_path / "index.json"
+    index_data: IndexFile = IndexFile.parse_file(str(index_file))
 
     version_map: Dict[int, VersionBrief] = {v.version: v for v in index_data.versions}
     # 寻找比当前版本稍小一个版本的 version 和 base
@@ -510,11 +511,11 @@ async def get_diff(email: str, file: str, version: int) -> DiffResp:
         last_version -= 1
 
     # 读取旧文件
-    r = _get_file_by_version(dist_file, last_version)
+    r = _get_file_by_version(email, file, last_version)
     last_content = merge_content(r.base_content, r.diff)
 
     # 读取新文件
-    r = _get_file_by_version(dist_file, version)
+    r = _get_file_by_version(email, file, version)
     cur_content = merge_content(r.base_content, r.diff)
 
     return DiffResp(
@@ -527,44 +528,27 @@ async def get_diff(email: str, file: str, version: int) -> DiffResp:
 
 async def get_blog_version(email: str) -> str:
     user, service = email.split("@", 1)
+    blog_ver_file = Path(BLOG_ROOT) / user / service / "version.txt"
     try:
-        with open(os.path.join(BLOG_ROOT, user, service, "version.txt"), "r") as f:
-            return f.read()
+        return blog_ver_file.read_text(encoding="utf-8")
     except FileNotFoundError:
         return ""
 
 
 # for auth
 async def get_encrypted_password(email: str) -> str:
-    user, service = email.split("@", 1)
-    dist_file = os.path.join(STORAGE_ROOT, "auth", f"{user}__at__{service}.txt")
+    dist_file = Path(STORAGE_ROOT) / email / "auth" / "pass.txt"
     try:
-        with open(dist_file, "r") as f:
-            return f.read()
+        return dist_file.read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
         return ""
 
 
 async def set_encrypted_password(email: str, token: str) -> None:
-    user, service = email.split("@", 1)
-    auth_root = os.path.join(STORAGE_ROOT, "auth")
-    utils.safe_make_dir(auth_root)
-    dist_file = os.path.join(auth_root, f"{user}__at__{service}.txt")
-
-    with open(dist_file, "wb") as f:
-        f.write(token.encode("utf-8"))
-
-
-async def load_user_token(email: str) -> List[str]:
-    user, service = email.split("@", 1)
-    auth_root = os.path.join(STORAGE_ROOT, "auth")
-    utils.safe_make_dir(auth_root)
-    dist_file = os.path.join(auth_root, f"{user}__at__{service}_t.txt")
-    if not os.path.exists(dist_file):
-        return []
-    with open(dist_file, "r") as f:
-        content = f.read(1024*100)
-    return content.split("\n")
+    dist_file = Path(STORAGE_ROOT) / email / "auth" / "pass.txt"
+    dist_file.parent.mkdir(parents=True, exist_ok=True)
+    dist_file.touch(exist_ok=True)
+    dist_file.write_text(token, encoding="utf-8")
 
 
 async def add_user_token(email: str, token: str) -> None:
@@ -572,48 +556,36 @@ async def add_user_token(email: str, token: str) -> None:
     将 token 追加到用户文件中，如果文件超过 100KB，则清理最久远的
 
     """
-    user, service = email.split("@", 1)
-    auth_root = os.path.join(STORAGE_ROOT, "auth")
-    utils.safe_make_dir(auth_root)
-    dist_file = os.path.join(auth_root, f"{user}__at__{service}_t.txt")
+    token_file = Path(STORAGE_ROOT) / email / "auth" / "tokens.txt"
+    token_file.parent.mkdir(exist_ok=True)
+    token_file.touch(exist_ok=True)
 
-    if os.path.exists(dist_file):
-        with open(dist_file, "r") as f:
-            content = f.read()
-
-        token_list = content.split("\n")
-    else:
-        token_list = []
-
+    old = token_file.read_text(encoding="utf-8", errors="replace")
+    token_list = [a for a in old.split("\n") if a.strip()]
     new_content = "\n".join(token_list[-9:] + [token])
-    with open(dist_file, "w") as f:
-        f.write(new_content)
+
+    token_file.write_text(new_content, encoding="utf-8")
 
 
 async def delete_user_token(email: str, token: str) -> None:
-    user, service = email.split("@", 1)
-    auth_root = os.path.join(STORAGE_ROOT, "auth")
-    utils.safe_make_dir(auth_root)
-    dist_file = os.path.join(auth_root, f"{user}__at__{service}_t.txt")
-    if not os.path.exists(dist_file):
+    tokens_file = Path(STORAGE_ROOT) / email / "auth" / "tokens.txt"
+    tokens_file.parent.mkdir(exist_ok=True)
+    if not tokens_file.exists():
         return
 
-    with open(dist_file, "r") as f:
-        content = f.read()
-
+    content = tokens_file.read_text(encoding="utf-8")
     token_list = content.split("\n")
     new_content = "\n".join([t for t in token_list if t != token])
-
-    with open(dist_file, "w") as f:
-        f.write(new_content)
+    tokens_file.write_text(new_content, encoding="utf-8")
 
 
 async def delete_all_user_token(email: str) -> None:
-    user, service = email.split("@", 1)
-    auth_root = os.path.join(STORAGE_ROOT, "auth")
-    utils.safe_make_dir(auth_root)
-    dist_file = os.path.join(auth_root, f"{user}__at__{service}_t.txt")
-    try:
-        os.remove(dist_file)
-    except:  # noqa
-        pass
+    tokens_file = Path(STORAGE_ROOT) / email / "auth" / "tokens.txt"
+    tokens_file.write_text("")
+
+
+async def load_user_token(email: str) -> List[str]:
+    token_file = Path(STORAGE_ROOT) / email / "auth" / "tokens.txt"
+    if not token_file.exists():
+        return []
+    return token_file.read_text(encoding="utf-8").split("\n")

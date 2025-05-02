@@ -52,29 +52,6 @@ class SupportedAction(object):
         return await picked_func(req)
 
 
-@SupportedAction(action="login")
-async def login(request: CustomRequest):
-    email = request.body["email"]
-    password = request.body["password"]
-
-    email_pattern = re.compile(r"^[A-Za-z\d]+([-_.][A-Za-z\d]+)*@([A-Za-z\d]+[-.])+[A-Za-z\d]{2,4}$")
-    if not email_pattern.match(email):
-        return {"code": 403, "msg": u"错误的邮箱"}
-
-    if not 5 < len(password) < 48:
-        return {"code": 403, "msg": u"密码过长或过短"}
-
-    try:
-        token = await AuthMgr.login(email, password)
-    except ErrorWithPrompt as e:
-        return {"code": 403, "msg": e.msg}
-
-    resp = JSONResponse({"code": 0, "email": email})
-    resp.set_cookie("email", value=email, httponly=True)
-    resp.set_cookie("token", value=token, httponly=True)
-    return resp
-
-
 @SupportedAction(action="register")
 async def register(request):
     email = request.body.get("email")
@@ -116,6 +93,29 @@ async def logout(request):
 
     resp.delete_cookie(key="email", httponly=True)
     resp.delete_cookie(key="token", httponly=True)
+    return resp
+
+
+@SupportedAction(action="login")
+async def login(request: CustomRequest):
+    email = request.body["email"]
+    password = request.body["password"]
+
+    email_pattern = re.compile(r"^[A-Za-z\d]+([-_.][A-Za-z\d]+)*@([A-Za-z\d]+[-.])+[A-Za-z\d]{2,4}$")
+    if not email_pattern.match(email):
+        return {"code": 403, "msg": u"错误的邮箱"}
+
+    if not 5 < len(password) < 48:
+        return {"code": 403, "msg": u"密码过长或过短"}
+
+    try:
+        token = await AuthMgr.login(email, password)
+    except ErrorWithPrompt as e:
+        return {"code": 403, "msg": e.msg}
+
+    resp = JSONResponse({"code": 0, "email": email})
+    resp.set_cookie("email", value=email, httponly=True)
+    resp.set_cookie("token", value=token, httponly=True)
     return resp
 
 
@@ -178,6 +178,9 @@ async def rm(request: CustomRequest):
 async def rename(request: CustomRequest):
     node_id = request.body.get("node_id")
     new_name = request.body.get("new_name")
+    if "/" in new_name or "\\" in new_name:
+        raise ErrorWithPrompt("新路径名不可包含特殊字符")
+
     await data_io.rename(request.email, node_id, new_name)
     return {"code": 0}
 
@@ -305,7 +308,7 @@ async def upload_file(request: CustomRequest):
     path: str = request.body.get("node_id")
     filename = request.file.filename
     savefile = os.path.join(path.lstrip("/"), filename)
-    content: bytes = await request.file.read(1024*1024*5)
+    content: bytes = await request.file.read(1024*1024*25)
     await data_io.savefile(request.email, savefile, content, create=True)
     return {"code": 0}
 
@@ -318,7 +321,7 @@ async def get_history(request: CustomRequest):
 
 
 @SupportedAction(action="diff", login_required=True)
-async def get_history(request: CustomRequest):
+async def diff(request: CustomRequest):
     path: str = request.body.get("node_id")
     version: int = request.body.get("version")
     if version < 1:
@@ -338,7 +341,7 @@ async def refresh_blog(request: CustomRequest):
 
 
 @SupportedAction(action="get_blog_info", login_required=True)
-async def refresh_blog(request: CustomRequest):
+async def get_blog_info(request: CustomRequest):
     email = request.email
     last_ver = await data_io.get_blog_version(email)
     return {"code": 0, "last_update": last_ver}

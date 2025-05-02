@@ -9,8 +9,7 @@ if DEBUG:
     print("The app is running in DEBUG mode.")
 
 if DEBUG:
-    home_dir = str(Path.home())
-    LOG_FILE = os.path.join(home_dir, "notebook_app.log")
+    LOG_FILE = str(Path.home() / "notebook_app.log")
 else:
     LOG_FILE = "/var/log/notebook_app.log"
 print(f"APP log will be written to this file: {LOG_FILE}")
@@ -22,8 +21,8 @@ if not REDIS_URL:
 
 STORAGE_ROOT = os.environ.get("STORAGE_ROOT")
 if not STORAGE_ROOT:
-    home_dir = str(Path.home())
-    STORAGE_ROOT = os.path.join(home_dir, "notebook_storage_root")
+    STORAGE_ROOT = str(Path.home() / "notebook_storage_root")
+    print(f"No STORAGE_ROOT configured, storage root dir will be set as: {STORAGE_ROOT}")
 
 BLOG_ROOT = os.path.join(STORAGE_ROOT, "blog")
 for _try_time in range(5):
