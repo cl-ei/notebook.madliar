@@ -290,6 +290,14 @@ li a{
     white-space: normal;
     word-break: break-word;
 }
+.article-show h1,
+.article-show h2,
+.article-show h3,
+.article-show h4,
+.article-show h5,
+.article-show h6 {
+    color: #4d4d4d;
+}
 .article-show h2 {
     font-size: 22px;
 }

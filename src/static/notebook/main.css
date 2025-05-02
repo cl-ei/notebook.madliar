@@ -259,6 +259,14 @@ img{
     white-space: normal;
     word-break: break-word;
 }
+#content-text h1,
+#content-text h2,
+#content-text h3,
+#content-text h4,
+#content-text h5,
+#content-text h6 {
+    color: #4d4d4d;
+}
 #content-text h2 {
     font-size: 22px;
 }
