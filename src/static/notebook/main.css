@@ -260,13 +260,16 @@ img{
     word-break: break-word;
 }
 #content-text h2 {
-    font-size: 28px;
+    font-size: 22px;
 }
 #content-text h3 {
-    font-size: 24px;
+    font-size: 18px;
 }
 #content-text h4 {
-    font-size: 18px;
+    font-size: 16px;
+}
+#content-text h5 {
+    font-size: 15px;
 }
 #content-text p{
     font-size: 14px;
