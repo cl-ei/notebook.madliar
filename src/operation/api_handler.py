@@ -191,10 +191,20 @@ async def newfile(request: CustomRequest):
     file_name = request.body.get("file_name")
     file = os.path.join(node_id, file_name)
     try:
-        await data_io.newfile(email=request.email, file=file)
+        await data_io.create_file(email=request.email, file=file)
     except ErrorWithPrompt as e:
         return {"code": 400, "msg": e.msg}
-    return{"code": 0}
+    return {"code": 0}
+
+
+@SupportedAction(action="upload_file", login_required=True)
+async def upload_file(request: CustomRequest):
+    path: str = request.body.get("node_id")
+    filename = request.file.filename
+    savefile = os.path.join(path.lstrip("/"), filename)
+    content: bytes = await request.file.read(1024*1024*25)
+    await data_io.create_file(request.email, savefile, content)
+    return {"code": 0}
 
 
 @SupportedAction(action="open", login_required=True)
@@ -286,8 +296,8 @@ async def save(request: CustomRequest):
             except (ValueError, TypeError):
                 raise ErrorWithPrompt("错误的base")
             dist_md5: str = request.body.get("dist_md5", "")
-            diff = [data_io.DiffItem(**d) for d in request.body.get("diff", [])]
-            version, base = await data_io.savefile_delta(request.email, file, base, dist_md5, diff)
+            diff_list = [data_io.DiffItem(**d) for d in request.body.get("diff", [])]
+            version, base = await data_io.savefile_delta(request.email, file, base, dist_md5, diff_list)
 
         else:
             raise ErrorWithPrompt("不支持此保存方式")
@@ -301,16 +311,6 @@ async def share(request: CustomRequest):
     await data_io.create_share(request.email, file=file)
     user, service = request.email.split("@", 1)
     return {"code": 0, "key": f"/notebook/share/{user}/{service}/{file.lstrip('/')}"}
-
-
-@SupportedAction(action="upload_file", login_required=True)
-async def upload_file(request: CustomRequest):
-    path: str = request.body.get("node_id")
-    filename = request.file.filename
-    savefile = os.path.join(path.lstrip("/"), filename)
-    content: bytes = await request.file.read(1024*1024*25)
-    await data_io.savefile(request.email, savefile, content, create=True)
-    return {"code": 0}
 
 
 @SupportedAction(action="history", login_required=True)

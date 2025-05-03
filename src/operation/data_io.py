@@ -179,12 +179,6 @@ async def rm(email: str, path: str):
             shutil.rmtree(f"{dist}.meta")
 
 
-async def newfile(email: str, file: str):
-    dist = Path(STORAGE_ROOT) / email / "storage" / file.lstrip("/")
-    dist.parent.mkdir(exist_ok=True)
-    dist.touch(exist_ok=True)
-
-
 async def rename(email: str, old_path: str, new_name: str):
     origin = Path(STORAGE_ROOT) / email / "storage" / old_path.lstrip("/")
     if not origin.exists():
@@ -205,31 +199,27 @@ async def rename(email: str, old_path: str, new_name: str):
 
 def _get_file_by_version(email: str, file: str, version: int) -> FileOpenRespData:
     """
-    通过 version file 还原 全量文件
+    通过 version 还原全量文件
+
+    version <= 0 时，返回原文件。否则严格还原。
 
     Params
     ------
-    version: int，必须存在，当其为0时，返回原文件
+    version: int，必须存在，当其为 0 时，返回空。
 
     Returns
     -------
     content: str 全量内容
     """
-    # version 为 0，返回源文件
-    if version < 0:
-        raise ErrorWithPrompt(f"文件版本({version})不存在")
-
     origin_file = Path(STORAGE_ROOT) / email / "storage" / file.lstrip("/")
-    if version == 0:
+    if version <= 0:
         try:
             content = origin_file.read_text(encoding="utf-8", errors="replace")
         except FileNotFoundError:
             raise ErrorWithPrompt("文件不存在")
-        return FileOpenRespData(version=0, base=0, base_content=content)
+        return FileOpenRespData(version=0, base=0, base_content=content, diff=[])
 
     meta_path = Path(STORAGE_ROOT) / email / "meta" / file.lstrip("/")
-
-    # meta_path = f"{file}.meta"
     try:
         target_version = str(meta_path / f"v{version}")
         vf = VersionFile.parse_file(target_version)
@@ -237,24 +227,21 @@ def _get_file_by_version(email: str, file: str, version: int) -> FileOpenRespDat
         raise ErrorWithPrompt(f"文件版本({version})不存在")
 
     # 读取 base 文件
-    if vf.base > 0:
-        base_file = meta_path / f"b{vf.base}"
-    else:
-        base_file = origin_file
+    base_file = meta_path / f"b{vf.base}"
     if not base_file.exists() or not base_file.is_file():
-        raise ErrorWithPrompt("base文件解析错误")
+        raise ErrorWithPrompt(f"base（{vf.base}）文件不存在")
 
     try:
-        content = base_file.read_text(encoding="utf-8", errors="replace")
+        base_content = base_file.read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
         raise ErrorWithPrompt("该版本源文件已不存在")
 
-    return FileOpenRespData(version=version, base=vf.base, base_content=content, diff=vf.diff)
+    return FileOpenRespData(version=version, base=vf.base, base_content=base_content, diff=vf.diff)
 
 
 def _get_last_vb_of_file(email: str, file: str) -> Tuple[Optional[int], Optional[int]]:
     """
-    当 version 或者 base file 不存在时，返回 0。按照约定，0代表原文件
+    当 version 或者 base file 不存在时，返回 0。
 
     Returns
     -------
@@ -302,10 +289,37 @@ def openfile(email: str, file: str, version: int = None) -> FileOpenRespData:
     return _get_file_by_version(email, file, version)
 
 
-async def savefile(email: str, file: str, content: Union[str, bytes], create=False) -> Tuple[int, int]:
+async def create_file(email: str, file: str, content: Union[str, bytes] = None):
+    """
+    upload 和 new 接口会触发至此, 其他操作皆为更新文件
+    1. 不允许覆盖
+    2. 需要清除 meta 目录
+
+    """
+    dist_file = Path(STORAGE_ROOT) / email / "storage" / file.lstrip("/")
+    if dist_file.exists() and dist_file.is_file():
+        raise ErrorWithPrompt("文件已存在")
+
+    meta_path = Path(STORAGE_ROOT) / email / "meta" / file.lstrip("/")
+    if meta_path.exists():
+        shutil.rmtree(str(meta_path))
+
+    dist_file.parent.mkdir(exist_ok=True, parents=True)
+    dist_file.touch(exist_ok=True)
+    if not content:
+        return
+
+    if isinstance(content, str):
+        bin_content = content.encode("utf-8", errors="replace")
+    else:
+        bin_content = content
+    dist_file.write_bytes(bin_content)
+
+
+async def savefile(email: str, file: str, content: Union[str, bytes]) -> Tuple[int, int]:
     """
     全量保存文件
-
+    1. 读取原文件，如果内容与上报的相同，则不保存。取该文件的 base 和 version 返回
     1. 寻找最新 version 和 base，创建 base，并根据该 base 创建 version
 
     Returns
@@ -313,45 +327,44 @@ async def savefile(email: str, file: str, content: Union[str, bytes], create=Fal
     version: int 版本号
     base: int base
     """
-    if isinstance(content, str):
-        try:
-            bin_content = content.encode("utf-8")
-        except UnicodeEncodeError:
-            raise ErrorWithPrompt("编码错误，请使用utf-8编码")
-    else:
-        bin_content = content
+    # 保存的 API 不再触发到这里，获取文件之时，即获取了 version 、 base（首版均为0）。
+    # 函数的实现没有问题。但后续更新皆基于 delta, 因此在此处加日志以记录，不在执行此逻辑
+    if datetime.datetime.now().year >= 2025:
+        logging.error(f"does not support save file all range. email: {email}, file: {file}")
+        raise ErrorWithPrompt("不再支持此操作！")
 
     dist_file = Path(STORAGE_ROOT) / email / "storage" / file.lstrip("/")
-    meta_path = Path(STORAGE_ROOT) / email / "meta" / file.lstrip("/")
     if not dist_file.exists() or not dist_file.is_file():
-        if not create:
-            raise ErrorWithPrompt("文件不存在")
-        # 创建新文件。只有 upload 接口才会触发至此，未创建就保存文件。此时应当清除 meta 文件夹
-        dist_file.parent.mkdir(exist_ok=True, parents=True)
-        dist_file.touch(exist_ok=True)
-        dist_file.write_bytes(bin_content)
+        raise ErrorWithPrompt("文件不存在")
 
-        if meta_path.exists():
-            shutil.rmtree(str(meta_path))
-        return 0, 0
+    version, base = _get_last_vb_of_file(email, file)
+    fr: FileOpenRespData = _get_file_by_version(email, file, version)
+    old_content = merge_content(base_content=fr.base_content, diff=fr.diff)
+
+    # 检查内容是否有改变
+    new_content = content.encode(encoding="utf-8", errors="replace") if isinstance(content, str) else content
+    if new_content == (old_content.encode("utf-8")):
+        logging.debug("content not change")
+        return fr.version, fr.base
+    dist_file.write_bytes(new_content)
 
     # 创建
     # 寻找最新版本
-    last_version, last_base = _get_last_vb_of_file(email, file)
-    target_version, target_base = last_version + 1, last_base + 1
+    target_version, target_base = fr.version + 1, fr.base + 1
 
     # 创建base
+    meta_path = Path(STORAGE_ROOT) / email / "meta" / file.lstrip("/")
     meta_path.mkdir(exist_ok=True, parents=True)
     base_file = meta_path / f"b{target_base}"
     base_file.touch(exist_ok=True)
-    base_file.write_bytes(bin_content)
+    base_file.write_bytes(new_content)
 
     # 创建version
     now = datetime.datetime.now()
     version_data = VersionFile(base=target_base, create_time=now)
     version_file = meta_path / f"v{target_version}"
     version_file.touch(exist_ok=True)
-    version_file.write_text(version_data.json(ensure_ascii=False).encode("utf-8"))
+    version_file.write_bytes(version_data.json(ensure_ascii=False).encode("utf-8"))
 
     # 更新 index
     index_file = meta_path / "index.json"
@@ -364,6 +377,7 @@ async def savefile(email: str, file: str, content: Union[str, bytes], create=Fal
 async def savefile_delta(email: str, file: str, base: int, dist_md5: str, diff: List[DiffItem]) -> Tuple[int, int]:
     """
     增量保存文件
+    参数中 dist_md5 是原文件的全量的 md5。由于源文件会一直改变，因此 base0 不可以代表原文件。
 
     1. 获取原始 base
     2. 根据 diff 生成目标内容
@@ -375,40 +389,54 @@ async def savefile_delta(email: str, file: str, base: int, dist_md5: str, diff: 
 
     Returns
     -------
-    version: int 版本号
+    version: int 版本号, 存储系统里最新的版本号
     base: int, rebuild 之后的 base
     """
     origin_file = Path(STORAGE_ROOT) / email / "storage" / file.lstrip("/")
     meta_path = Path(STORAGE_ROOT) / email / "meta" / file.lstrip("/")
     meta_path.mkdir(exist_ok=True, parents=True)
-    base_file = (meta_path / f"b{base}") if base > 0 else origin_file
 
     try:
-        content = base_file.read_text(encoding="utf-8", errors="replace")
+        if base == 0:
+            base_content = origin_file.read_text(encoding="utf-8", errors="replace")
+        else:
+            base_file = meta_path / f"b{base}"
+            base_content = base_file.read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
-        raise ErrorWithPrompt("原文件不存在")
+        raise ErrorWithPrompt("无法读取 base 内容")
 
-    target_content = merge_content(content, diff)
+    target_content = merge_content(base_content, diff)
     result_md5 = utils.calc_md5(target_content)
     if result_md5 != dist_md5:
         raise ErrorWithPrompt("文件不一致")
 
+    # 读取原文件内容，若无改变，则不保存
     version, max_base = _get_last_vb_of_file(email, file)
-    target_version = version + 1
+    fr: FileOpenRespData = _get_file_by_version(email, file, version)
+    old_content = merge_content(base_content=fr.base_content, diff=fr.diff)
+    old_md5 = utils.calc_md5(old_content)
+    if old_md5 == dist_md5:
+        logging.debug(f"on save content delta, md5 not change. file: \n\t{file}")
+        return version, max_base
+    # 更新原文件
+    origin_file.write_bytes(target_content.encode("utf-8", errors="replace"))
 
+    # 更新base文件
+    target_version = version + 1
     now = datetime.datetime.now()
     if (
+        base == 0 or
         (target_version > 0 and target_version % 10 == 0) or
         len(diff) > 10 or
         sum([d.count for d in diff if d.added is True or d.removed is True]) > 512
-    ):
+    ):  # 这一步是在有较大改动的时候，重新派生出 base
+
         # rebuild base
         target_base = target_version
 
         # save base file
         target_base_file = meta_path / f"b{target_base}"
         target_base_file.touch(exist_ok=True)
-
         target_base_file.write_bytes(target_content.encode("utf-8"))
         vf = VersionFile(base=target_base, diff=[], create_time=now)
 
@@ -416,6 +444,7 @@ async def savefile_delta(email: str, file: str, base: int, dist_md5: str, diff: 
         target_base = base
         vf = VersionFile(base=base, diff=diff, create_time=now)
 
+    # 更新version文件
     version_file = meta_path / f"v{target_version}"
     version_file.touch(exist_ok=True)
     version_file.write_bytes(vf.json(ensure_ascii=False).encode("utf-8"))
@@ -423,7 +452,6 @@ async def savefile_delta(email: str, file: str, base: int, dist_md5: str, diff: 
     # 更新 index file
     index_file = meta_path / "index.json"
     index_file.touch(exist_ok=True)
-
     index_f: IndexFile = IndexFile.parse_file(str(index_file))
     index_f.versions.append(VersionBrief(
         version=target_version, base=target_base, create_time=now,

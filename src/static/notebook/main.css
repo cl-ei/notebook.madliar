@@ -103,15 +103,6 @@ img{
 .history-view-body{
     white-space: break-spaces;
 }
-.history-item-selected{
-    color: #ff0b5e;
-    font-weight: 500;
-    border-bottom-color: #333;
-}
-.history-item-selected:hover{
-    color: #ff0000;
-    font-weight: 800;
-}
 .history-revert{
     padding-left: 0;
     margin-left: 0;

@@ -866,7 +866,6 @@ $.cl = {
 
         let curDoc = $.cl.getCurrentDoc();
         if (curDoc.path === undefined || curDoc.length === 0) {
-            // 保存为新文件
             return;
         }
 
@@ -943,19 +942,6 @@ $.cl = {
             $.cl.drawSaveBtnInitState();
             $.cl.popupMessage(resp.msg || "保存失败");
         });
-
-        return;
-        /* show confirm
-        console.log("confirm?")
-        var path = "",
-            topSelected = $("#jstree").jstree().get_top_selected(true);
-        if (topSelected.length < 1){
-            path = window.contextData.loginInfo.email;
-        }else{
-            path = topSelected[0].type === "folder" ? topSelected[0].id : topSelected[0].parent;
-        }
-        $.cl.showSaveContentDialog(path, content);
-        */
     },
     showHistoryBusy: false,
     showHistoryDiff: function () {
