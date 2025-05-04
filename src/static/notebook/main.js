@@ -955,14 +955,15 @@ $.cl = {
         $(this).addClass("history-item-selected");
 
         let curDoc = $.cl.getCurrentDoc(),
-            version = $(this).data("version");
+            version = $(this).data("version"),
+            createTime = $(this).data("create_time");
         $.cl.sendRequest({action: "diff", "node_id": curDoc.path, version: version}, function (resp) {
             $.cl.showHistoryBusy = false;
 
             let diffChars = Diff.diffChars(resp.last_content, resp.current_content),
                 renderHtml = [
                     '<div class="history-revert clickable">' +
-                    '<i class="fa fa-undo" aria-hidden="true"></i> 恢复此版本' +
+                    '<i class="fa fa-undo" aria-hidden="true"></i> 恢复 ' + '[' + createTime + '] 版本: ' + version +
                     '</div>'
                 ];
             for (let i = 0; i < diffChars.length; i++){
@@ -1000,7 +1001,7 @@ $.cl = {
         $("#close-history-window").off("click").click(function (){historyWindow.fadeOut(250)});
         historyWindow.fadeIn(250);
         // 发送请求，获取历史记录
-
+        $(".history-view-body").html("");
         $.cl.sendRequest({action: "history", "node_id": curDoc.path}, function (resp) {
             // 渲染dom
             if (resp.code !== 0) {
@@ -1014,8 +1015,9 @@ $.cl = {
             let historyHtml = [];
             for (let i = 0; i < resp.history.length; i++) {
                 let h = resp.history[i];
-                historyHtml.push('<li class="clickable history-item" data-version="' + h.version
-                    + '">[' + h.create_time + '] 版本' + h.version + ', ' + h.lines + '处差异</li>')
+                historyHtml.push(
+                    '<li class="clickable history-item" data-version="' + h.version + '" ' +
+                    'data-create_time="' + h.create_time + '">[' + h.create_time + '] 版本' + h.version + ', ' + h.lines + '处差异</li>')
             }
             $(".history-list").html('<ul>' + historyHtml.join('') + '</ul>');
             $(".history-item").off("click").click($.cl.showHistoryDiff);
