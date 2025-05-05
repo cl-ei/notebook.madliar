@@ -408,6 +408,7 @@ async def savefile_delta(email: str, file: str, base: int, dist_md5: str, diff: 
     target_content = merge_content(base_content, diff)
     result_md5 = utils.calc_md5(target_content)
     if result_md5 != dist_md5:
+        logging.info(f"target_content len: {len(target_content)}, content: {target_content}\n\n")
         raise ErrorWithPrompt("文件不一致")
 
     # 读取原文件内容，若无改变，则不保存
