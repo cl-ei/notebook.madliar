@@ -5,11 +5,11 @@ from urllib.parse import unquote
 from fastapi import APIRouter
 from fastapi.responses import Response
 from fastapi.requests import Request
+from fastapi import Query
 
 
 router = APIRouter()
 
-SMS_FILE = "sms_list.txt"
 MAX_RECORDS = 500
 
 # ---------- 路径判定 ----------
@@ -22,6 +22,7 @@ else:  # Linux / Docker / Server
 os.makedirs(BASE_DIR, exist_ok=True)
 
 SMS_FILE = os.path.join(BASE_DIR, "sms_list.txt")
+TOKEN_FILE = os.path.join(BASE_DIR, "sms_token.txt")
 MAX_RECORDS = 500
 
 
@@ -71,10 +72,22 @@ def save_sms_record(record: dict):
 
 
 @router.get("/notebook/sms_list")
-async def get_sms() -> Response:
+async def get_sms(token: str = Query("")) -> Response:
     """
     返回当前保存的 SMS 列表
     """
+
+    try:
+        with open(TOKEN_FILE, "r", encoding="utf-8") as f:
+            true_token = f.read()
+    except:  # noqa
+        true_token = "-no-token-"
+    if token != true_token:
+        return Response(
+            content="=== forbidden ===",
+            media_type="text/plain; charset=utf-8"
+        )
+
     try:
         with open(SMS_FILE, "r", encoding="utf-8") as f:
             content = f.read()
