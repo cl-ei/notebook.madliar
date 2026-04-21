@@ -11,7 +11,9 @@ if DEBUG:
 if DEBUG:
     LOG_FILE = str(Path.home() / "notebook_app.log")
 else:
-    LOG_FILE = "/var/log/notebook_app.log"
+    LOG_FILE = os.environ.get("LOG_FILE")
+    if not LOG_FILE:
+        LOG_FILE = "/var/log/notebook_app.log"
 print(f"APP log will be written to this file: {LOG_FILE}")
 
 # "redis://:{password}@{host}:{port}/{db}"

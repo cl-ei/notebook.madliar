@@ -387,6 +387,12 @@ async def savefile_delta(email: str, file: str, base: int, dist_md5: str, diff: 
 
     # 当 diff 过大，不值得保存增量文件时，重新生成 base，并基于新 base 生成 version
 
+    Note:
+    遇到一个bug: 当输入包含💥字符时, 会导致diff输出的position比实际字符多1，也就致使后端计算结果与前端不符。
+    这是由于，后端使用 unicode 码元数量进行计数，而前端 JavaScript 使用utf-16编码，会将其视为两个码元。这个bug
+    由前端来兼容后端标准。
+    即：1. 前后端必须严格保证内容为 unicode, 编码方式为utf-8；2. diff 数据结构的 count，必须为 unicode 码元的个数。
+
     Returns
     -------
     version: int 版本号, 存储系统里最新的版本号
@@ -407,8 +413,10 @@ async def savefile_delta(email: str, file: str, base: int, dist_md5: str, diff: 
 
     target_content = merge_content(base_content, diff)
     result_md5 = utils.calc_md5(target_content)
+
     if result_md5 != dist_md5:
-        logging.info(f"target_content len: {len(target_content)}, content: {target_content}\n\n")
+        logging.info(f"target_content len: {len(target_content)}, dist_md5: {dist_md5}, result_md5: {result_md5}\n "
+                     f"content: \n{target_content}\n\n")
         raise ErrorWithPrompt("文件不一致")
 
     # 读取原文件内容，若无改变，则不保存

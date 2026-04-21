@@ -49,7 +49,6 @@ $.cl = {
         rSpLine.addEventListener('mousedown', (event) => {onMouseDown(event, false)});
 
         function onMouseDown(event, isLeftBar) {
-            console.log("this event!", event, ", isLeftBar: ", isLeftBar);
             leftDown = isLeftBar;
             startX = event.clientX;
             startWidth = parseInt(document.defaultView.getComputedStyle(isLeftBar === true ? lSpLine : rSpLine).width, 10);
@@ -170,6 +169,13 @@ $.cl = {
             clearTimeout($.cl.saveBtnAnimationId);
         }
         $.cl.saveBtnAnimationId = setTimeout($.cl.drawSaveBtnInitState, 2500);
+
+        // 只有保存成功会进入到这个函数，因此在这里重置状态
+        const titleDom = $(".textarea-title").eq(0);
+        const title = titleDom.html();
+        if (title[0] === "*") {
+            titleDom.html(title.substring(3));
+        }
     },
     onSaveContent: false,
     lastCommitMd5: undefined,
@@ -210,6 +216,10 @@ $.cl = {
         $.cl.sendRequest({action: "login", email: email, password: password}, $.cl.onLoginOrRegistered);
     },
     logout: function (){
+        if (true === $.cl.checkIfNeedSave()){
+            return;
+        }
+        $.cl.clearCurrentDoc();
         var afterLogOut = function (data){
             if(data.code !== 0){
                 var msg = "操作失败。详细信息：" + data.msg;
@@ -271,36 +281,31 @@ $.cl = {
         $("#input-modal").modal("show");
     },
 
-    docBaseContent: "",
     getCurrentDoc: function () {
         let ver = parseInt(localStorage.docVer),
-            bs = parseInt(localStorage.docBase);
+            bs = parseInt(localStorage.docBase),
+            bc = localStorage.baseContent;
         return {
             path: localStorage.docPath,
             version: isNaN(ver) ? undefined : ver,
             base: isNaN(bs) ? undefined : bs,
-            baseContent: $.cl.docBaseContent,
+            baseContent: bc === undefined ? "" : bc,
+            docType: localStorage.docType,
         }
     },
     setCurrentDoc: function (option) {
-        // 如果设置其他项，则 path 保持
-        // 如果设置 path 而未指定 ver 和 content, 则清空后者
-        if (option.path !== undefined) {
-            localStorage.docPath = option.path;
-        }
+        localStorage.docPath = option.path;
         localStorage.docVer = option.version;
-        if (option.base !== undefined) {
-            localStorage.docBase = option.base;
-        }
-        if (option.baseContent !== undefined) {
-            $.cl.docBaseContent = option.baseContent;
-        }
+        localStorage.docBase = option.base;
+        localStorage.baseContent = option.baseContent;
+        localStorage.docType = option.docType;
     },
     clearCurrentDoc: function () {
         localStorage.removeItem("docPath");
         localStorage.docVer = undefined;
         localStorage.docBase = undefined;
-        $.cl.docBaseContent = "";
+        localStorage.baseContent = "";
+        localStorage.docType = "";
         $.cl.lastSavedContent = undefined;
     },
     jstNodeOpenCb: {}, // nodeId -> [function (node) {}]
@@ -374,12 +379,10 @@ $.cl = {
                     function openThisNode(leftTimes) {
                         let node = jst.get_node(toOpen);
                         if (node === false && leftTimes > 0) {
-                            console.log("next loop");
                             setTimeout(function (){openThisNode(leftTimes - 1)}, 100);
                             return;
                         }
                         if (node.state.opened) {
-                            console.log("this node opened: ", toOpen);
                             return;
                         }
                         $.cl.openJstreeNode(toOpen);
@@ -415,7 +418,7 @@ $.cl = {
                     let refreshNode = nodeId.split("/").slice(0, -1).join("/") || "/";
                     $("#jstree").jstree().refresh_node(refreshNode);
                     if(nodeId === $.cl.getCurrentDoc().path){
-                        $.cl.setCurrentDoc({"path": ""})
+                        $.cl.clearCurrentDoc()
                         $.cl.renderCurrentEditDocumentTitle();
                     }
                 }else{
@@ -435,26 +438,43 @@ $.cl = {
     showRenameDialog: function (nodeId, isdir){
         var onConfirmBtnClicked = function (){
             $("#input-modal").modal("hide");
-            var nodeId = $(this).data("nodeId"),
-                dirName = $("input[name=folder-name]").val();
-            if (!dirName.match(/^[\.a-zA-Z0-9_\u4e00-\u9fa5]+$/)){
+            var originNodeId = $(this).data("nodeId"),
+                newName = $("input[name=folder-name]").val();
+
+            if (!newName.match(/^[\.a-zA-Z0-9_\u4e00-\u9fa5]+$/)){
                 $.cl.popupConfirm("仅允许包含数字、字母、下划线以及汉字，不支持其它字符。请返回修改。", null, false, "名称有误");
                 return false;
             }
             var onRenameResponse = function (data){
                 if(data.code === 0){
                     $.cl.popupMessage("重命名成功！", null, 3);
-                    var nodePath = nodeId.split("/").slice(0, -1).join("/") || "/";
-                    $("#jstree").jstree().refresh_node(nodePath);
-                    if (nodeId === $.cl.getCurrentDoc().path){
-                        $.cl.setCurrentDoc({path: (nodePath === "/" ? "" : nodePath) + "/" + dirName})
-                        $.cl.renderCurrentEditDocumentTitle();
+                    let nodeParent = originNodeId.split("/").slice(0, -1).join("/") || "/";
+                    const jst = $("#jstree").jstree(),
+                        newNodeId = nodeParent + newName;
+                    jst.refresh_node(nodeParent);
+
+                    let checkAndReload = (times) => {
+                        if (isNaN(times) || times < 1) {
+                            return;
+                        }
+                        let distNode = jst.get_node(newNodeId);
+                        if (distNode === false) {
+                            setTimeout(() => {checkAndReload(times - 1)}, 100);
+                            return;
+                        }
+                        let currDoc = $.cl.getCurrentDoc();
+                        if (currDoc.path === originNodeId){
+                            currDoc.path = newNodeId;
+                            $.cl.setCurrentDoc(currDoc)
+                            $.cl.renderCurrentEditDocumentTitle();
+                        }
                     }
+                    setTimeout(() => {checkAndReload(10)}, 100);
                 }else{
                     $.cl.popupMessage("重命名失败：" + data.msg);
                 }
             };
-            $.cl.sendRequest({action: "rename", node_id: nodeId, new_name: dirName}, onRenameResponse);
+            $.cl.sendRequest({action: "rename", node_id: nodeId, new_name: newName}, onRenameResponse);
         };
         $("#input-modal-confirm-btn").data("nodeId", nodeId).off("click").click(onConfirmBtnClicked);
         $("#input-modal-title").html(isdir ? "重命名文件夹" : "重命名文件");
@@ -505,52 +525,26 @@ $.cl = {
     renderCurrentEditDocumentTitle: function (){
         let curDoc = $.cl.getCurrentDoc();
         if(curDoc.path !== undefined && curDoc.path.length > 0){
-            var jstreeInstence = $("#jstree").jstree();
-            jstreeInstence.deselect_all();
-            jstreeInstence.select_node(curDoc.path);
+            const jst = $("#jstree").jstree();
+            jst.deselect_all();
+            jst.select_node(curDoc.path);
             $("#input-text-area").prev().html("编辑 - " + curDoc.path);
         }else{
-            $("#input-text-area").prev().html("编辑");
-            document.getElementById('input-text-area').value = "";
+            $("#input-text-area").val("").prev().html("编辑");
         }
     },
-    showSaveContentDialog: function (path, content){
-        // TODO：保存新文件
-        var onConfirmBtnClicked = function (){
-            $("#input-modal").modal("hide");
-
-            var nodeId = $(this).data("nodeId"),
-                content = $(this).data("content"),
-                fileName = $("input[name=folder-name]").val();
-
-            if (!fileName.match(/^[\.a-zA-Z0-9_\u4e00-\u9fa5]+$/)){
-                $.cl.popupConfirm("仅允许包含数字、字母、下划线以及汉字，不支持其它字符。请返回修改。", null, false, "名称有误");
-                return false;
-            }
-
-            var onSaveContentResponsed = function (data){
-                if(data.code === 0){
-                    $.cl.popupMessage("保存成功！", null, 3);
-                    $("#jstree").jstree().refresh_node(nodeId);
-                }else{
-                    $.cl.popupMessage("保存失败：" + data.msg);
-                }
-                $.cl.setCurrentDoc({path: nodeId + "/" + fileName});
-                $.cl.renderCurrentEditDocumentTitle();
-            };
-            $.cl.sendRequest({action: "save", node_id: nodeId + "/" + fileName, content: encodeURIComponent(content)}, onSaveContentResponsed);
-        };
-        $("#input-modal-confirm-btn").data("nodeId", path).data("content", content).off("click").click(onConfirmBtnClicked);
-        $("#input-modal-title").html("保存文档到你的目录中");
-        $("#input-modal-body").html([
-            '<p>将你编辑的文档保存到“<strong>' + path + '/”</strong>下。</p>',
-            '<p>这个路径可能是系统默认的，但如果你想改变存放的地方，请在左侧的目录结构中点击你想保存的位置，然后再按下“Ctrl”和“S”键。</p>',
-            '<label>文件名: <input class="redinput" type="text" name="folder-name"/></label>'
-        ].join(""));
-        $("input[name=folder-name]").keyup(function(e){if(e.keyCode === 13)$("#input-modal-confirm-btn").trigger("click");});
-        $("#input-modal").modal("show");
-    },
     openFile: function (nodeId){
+        if (true === $.cl.checkIfNeedSave()){
+            return;
+        }
+
+        let jst = $("#jstree").jstree();
+        let node = jst.get_node(nodeId);
+        if (node === false) {
+            setTimeout(() => {$.cl.openFile(nodeId)}, 400);
+            return;
+        }
+        const nodeType = node.type;
         if ($.cl.onOpenFile){
             $.cl.popupMessage("正在加载，请稍候。", undefined, 3);
             return;
@@ -559,7 +553,7 @@ $.cl = {
         }
 
         $("#input-text-area").prev().html("正在加载...");
-        var onFileOpenedResponse = function (data){
+        let onFileOpenedResponse = function (data){
             $.cl.onOpenFile = false;
             if (data.code !== 0){
                 var msg = "操作失败。详细信息：" + data.msg;
@@ -570,7 +564,7 @@ $.cl = {
             }
             if (data.img === true) {
                 // 预览图片，渲染dom
-                document.getElementById('input-text-area').value = '![](' + data.url + ')';
+                $("#input-text-area").val('![](' + data.url + ')');
                 $.cl.clearCurrentDoc();
                 $.cl.setCurrentDoc({path: nodeId});
                 $.cl.renderCurrentEditDocumentTitle();
@@ -599,9 +593,9 @@ $.cl = {
                 renderContent = resultContents.join("");
             }
             $.cl.clearCurrentDoc();
-            $.cl.setCurrentDoc({path: nodeId, version: data.version, base: data.base, baseContent: baseContent});
+            $.cl.setCurrentDoc({path: nodeId, version: data.version, base: data.base, baseContent: baseContent, docType: nodeType});
             $.cl.renderCurrentEditDocumentTitle();
-            document.getElementById('input-text-area').value = renderContent;
+            $("#input-text-area").val(renderContent).data("flushVer", "f");
         };
         var onOpenFileFailed = function (e){
             $.cl.onOpenFile = false;
@@ -725,6 +719,9 @@ $.cl = {
                     });
                 }
             }
+        } else if (selectedNodeId === "/") {
+            delete returnDat["rm"];
+            delete returnDat["rename"];
         }
         return returnDat;
     },
@@ -754,7 +751,7 @@ $.cl = {
             },
             plugins: ["contextmenu", "types"]
         });
-        document.getElementById('input-text-area').value = $("#default-file-content").val();
+        $("#input-text-area").val($("#default-file-content").val()).data("flushVer", "f");
     },
     getAndRenderLoginedFileListAndPage: function(){
         var jstreeInstance = $("#jstree");
@@ -771,7 +768,7 @@ $.cl = {
             if (["text", "md", "img"].indexOf(node.node.type) < 0) {
                 return;
             }
-            var selectedNodeId = node.node.id;
+            const selectedNodeId = node.node.id;
             if ($.cl.getCurrentDoc().path !== selectedNodeId) {
                 $.cl.openFile(selectedNodeId);
             }
@@ -800,7 +797,7 @@ $.cl = {
             },
             plugins: ["types", "contextmenu"]
         });
-        document.getElementById('input-text-area').value = "";
+        $("#input-text-area").val("").data("flushVer", "f");
     },
     renderLoginPage: function (){
         $.cl.releasePageResource();
@@ -823,9 +820,16 @@ $.cl = {
         $("#top-dynamic-nav").html(leftNavHtml);
         $("#save-btn").off("click").click($.cl.saveContent);
         $("#history-btn").off("click").click($.cl.selectHistory);
+        // init jstree
         $.cl.getAndRenderLoginedFileListAndPage();
         document.getElementById("jstree").addEventListener("drop", $.cl.onDropFileToJsTree, false);
         document.getElementById("input-text-area").addEventListener("drop", $.cl.onDropFileToJsTree, false);
+
+        $("#file-input").change(function(){
+            let file = $(this)[0].files[0],
+                path = $(this).data("path");
+            $.cl.uploadFile(file, path);
+        });
     },
     releasePageResource: function (){},
     renderUnloginPage: function (){
@@ -848,6 +852,11 @@ $.cl = {
             return $("#login-or-regist").html() === "注册" ? $.cl.register() : $.cl.login();
         });
         $("#top-dynamic-nav").html("");
+        $("input[name=password]").off("keyup").on('keyup', function(e){
+            if(e.key === "Enter"){
+                $("#login-btn").trigger("click");
+            }
+        });
         $.cl.getAndRenderDefaultFileListAndPage();
     },
     saveContent: function (){
@@ -865,7 +874,7 @@ $.cl = {
         if (!content.trim(" \n\r\t")) return;
 
         let curDoc = $.cl.getCurrentDoc();
-        if (curDoc.path === undefined || curDoc.length === 0) {
+        if (curDoc.path === undefined || curDoc.path.length === 0) {
             return;
         }
 
@@ -883,7 +892,7 @@ $.cl = {
             reqData["base"] = curDoc.base;
             reqData["dist_md5"] = md5(content);
 
-            let rawDiff = Diff.diffChars(curDoc.baseContent, content),
+            let rawDiff = $.cl.getDiff(curDoc.baseContent, content),
                 postDiff = [];
             for (let i = 0; i < rawDiff.length; i++) {
                 let d = rawDiff[i];
@@ -900,17 +909,14 @@ $.cl = {
         // 2. 判断内容是否重复
         // 3. 绘制按钮
         if ($.cl.onSaveContent === true) {
-            console.log("on saving")
             return;
         }
         if (reqData.range === "delta" && reqData.dist_md5 === $.cl.lastCommitMd5) {
-            console.log("old content")
             $.cl.drawSaveSuccessAnimation();
             return;
         }
         $.cl.onSaveContent = true;
         $.cl.lastSavedContent = content;
-        $.cl.lastSavedTime = Date.now();
         $.cl.drawSavingAnimation();
 
         $.cl.sendRequest(reqData, function (data) {
@@ -931,11 +937,13 @@ $.cl = {
             }
 
             let curDoc = $.cl.getCurrentDoc();
-            if (data.base === curDoc.base) {
-                $.cl.setCurrentDoc({version: data.version})
-            } else {
-                $.cl.setCurrentDoc({version: data.version, base: data.base, baseContent: content})
+            curDoc.version = data.version;
+            if (data.base !== curDoc.base) {
+                curDoc.base = data.base;
+                curDoc.baseContent = content;
             }
+            $.cl.setCurrentDoc(curDoc);
+
         }, function (resp) {
             // 保存失败进入此
             $.cl.onSaveContent = false;
@@ -943,10 +951,25 @@ $.cl = {
             $.cl.popupMessage(resp.msg || "保存失败");
         });
     },
+    getDiff: function (a, b) {
+        const dmp = new diff_match_patch();
+        let diff = dmp.diff_main(a, b);
+        dmp.diff_cleanupSemantic(diff);
+        let result = [];
+        for (const item of diff) {
+            let thisItem =  {
+                count: [...item[1]].length,
+                added: item[0] === 1,
+                removed: item[0] === -1,
+                value: item[1],
+            };
+            result.push(thisItem);
+        }
+        return result;
+    },
     showHistoryBusy: false,
     showHistoryDiff: function () {
         if ($.cl.showHistoryBusy === true) {
-            console.log("showHistoryBusy busy");
             return;
         }
         $.cl.showHistoryBusy = true;
@@ -960,7 +983,7 @@ $.cl = {
         $.cl.sendRequest({action: "diff", "node_id": curDoc.path, version: version}, function (resp) {
             $.cl.showHistoryBusy = false;
 
-            let diffChars = Diff.diffChars(resp.last_content, resp.current_content),
+            let diffChars = $.cl.getDiff(resp.last_content, resp.current_content),
                 renderHtml = [
                     '<div class="history-revert clickable">' +
                     '<i class="fa fa-undo" aria-hidden="true"></i> 恢复 ' + '[' + createTime + '] 版本: ' + version +
@@ -980,7 +1003,8 @@ $.cl = {
             }
             $(".history-view-body").html(renderHtml.join(""));
             $(".history-revert").off("click").click(function (){
-                document.getElementById('input-text-area').value = resp.current_content;
+                $("#input-text-area").val(resp.current_content).data("flushVer", "f");
+                $.cl.onTextAreaChanged();
                 $("#close-history-window").trigger("click");
 
                 // clear old context
@@ -1022,28 +1046,6 @@ $.cl = {
             $(".history-list").html('<ul>' + historyHtml.join('') + '</ul>');
             $(".history-item").off("click").click($.cl.showHistoryDiff);
         })
-    },
-    daemonToTransMdId: undefined,
-    oldContent: undefined,
-    lastSavedTime: 0,
-    lastSavedContent: undefined,
-    daemonToTransMd: function (){
-        // 定时将mark down转换为html
-        return setInterval(function(){
-            var newContent = $("#input-text-area").val();
-            if (newContent !== $.cl.oldContent){
-                $.cl.oldContent = newContent;
-                $("#content-text").html(marked(newContent));
-                hljs.highlightAll();
-            }
-            let current = Date.now();
-            if ($.cl.lastSavedContent === undefined) {
-                $.cl.lastSavedContent = newContent;
-            }
-            if ($.cl.lastSavedContent !== newContent && (current - $.cl.lastSavedTime) >= (1000 * 5)) {
-                $("#save-btn").trigger("click");
-            }
-        }, 400);
     },
     insertStrToTextarea: function(str){
         var obj = document.getElementById("input-text-area");
@@ -1094,6 +1096,10 @@ $.cl = {
     },
     onDropFileToJsTree: function (e){
         e.preventDefault();
+        if (!(window.contextData.loginInfo && window.contextData.loginInfo.email)) {
+            $.cl.popupMessage("请登录后再尝试。");
+            return true;
+        }
         var fileList = e.dataTransfer.files;
         if(fileList.length === 0){
             return false;
@@ -1148,20 +1154,60 @@ $.cl = {
             }
         }
     },
-    initPage: function (){
-        $.cl.compatibilityChecking();
-        $.cl.initPageSplitWidth();
-        (window.contextData.loginInfo && window.contextData.loginInfo.email ? $.cl.renderLoginPage : $.cl.renderUnloginPage)();
-        $("input[name=password]").on('keyup', function(e){if(e.key === "Enter"){$("#login-btn").trigger("click")}});
-        if ($.cl.daemonToTransMdId){
-            clearInterval($.cl.daemonToTransMdId);
+    checkIfNeedSave: function () {
+        // 只检查 md 与 txt
+        const curDoc = $.cl.getCurrentDoc();
+        if (!(curDoc.docType === "md" || curDoc === "txt")) {
+            return false;
         }
-        $("#file-input").change(function(){
-            var file = $(this)[0].files[0],
-                path = $(this).data("path");
-            $.cl.uploadFile(file, path);
-        });
-        $.cl.daemonToTransMdId = $.cl.daemonToTransMd();
+        const titleDom = $(".textarea-title").eq(0);
+        const title = titleDom.html();
+        if (title[0] === "*") {
+            $.cl.popupConfirm("内容发生改变，是否保存？", () => {
+                $.cl.saveContent();
+            })
+            return true;
+        }
+        return false;
+    },
+    daemonToTransMdId: undefined,
+    onTextAreaChanged: function () {
+        const taDom = $("#input-text-area");
+        let flushVer = taDom.data("flushVer");
+        if (!Number.isInteger(flushVer)) {
+            flushVer = 1;
+        } else {
+            flushVer += 1;
+        }
+        taDom.data("flushVer", flushVer);
+        // 只有当前节点为md、text时，编辑才会置新状态
+        const titleDom = $(".textarea-title").eq(0);
+        const title = titleDom.html();
+        if (title[0] !== "*") {
+            titleDom.html('* 已' + title)
+        }
+    },
+    initMarkDownEditor: function () {
+        const taDom = $("#input-text-area");
+
+        let lastFlush = 0;
+        $.cl.daemonToTransMdId = setInterval(() => {
+            const needFlush = taDom.data("flushVer");
+            if (Number.isInteger(needFlush) && needFlush === lastFlush) {
+                return;
+            }
+            if (Number.isInteger(needFlush)) {
+                lastFlush = needFlush;
+            }
+
+            let newContent = taDom.val();
+            $("#content-text").html(marked(newContent));
+            hljs.highlightAll();
+        }, 300);
+
+        const textarea = document.getElementById('input-text-area');
+        textarea.addEventListener('input', $.cl.onTextAreaChanged);
+
         if (window.markedImageParseCB === undefined) {
             window.markedImageParseCB = (href) => {
                 let availPrefix = [
@@ -1188,11 +1234,7 @@ $.cl = {
                 }
             }
         }
-        /*
-         * drag event
-         * ctrl key event
-         * tab key event
-         */
+
         $(document).on({
             dragleave: $.cl.preventDefault,
             drop: $.cl.preventDefault,
@@ -1200,6 +1242,7 @@ $.cl = {
             dragover: $.cl.preventDefault,
             keydown: function(event){
                 if(event.keyCode === 9){
+                    // 设置 tab 键
                     if($("#input-text-area").is(":focus")){
                         // 在编写代码时插入 \t
                         event.preventDefault();
@@ -1219,6 +1262,12 @@ $.cl = {
                 }
             }
         })
+    },
+    initPage: function (){
+        $.cl.compatibilityChecking();
+        $.cl.initPageSplitWidth();
+        (window.contextData.loginInfo && window.contextData.loginInfo.email ? $.cl.renderLoginPage : $.cl.renderUnloginPage)();
+        $.cl.initMarkDownEditor();
     },
 };
 

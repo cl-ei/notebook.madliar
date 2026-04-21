@@ -12,4 +12,5 @@ docker run -itd \
   -e REDIS_URL=${REDIS_URL} \
   -e STORAGE_ROOT="/storage_root" \
   -v /data/nvme/notebook_user:/storage_root \
+  -v /var/log:/var/log \
   ${DOCKER_IMAGE}
