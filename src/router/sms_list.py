@@ -79,7 +79,7 @@ async def get_sms(token: str = Query("")) -> Response:
 
     try:
         with open(TOKEN_FILE, "r", encoding="utf-8") as f:
-            true_token = f.read()
+            true_token = f.read().strip()
     except:  # noqa
         true_token = "-no-token-"
     if token != true_token:
