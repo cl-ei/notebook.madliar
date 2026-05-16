@@ -7,7 +7,7 @@ from typing import *
 from fastapi import UploadFile
 from fastapi.responses import JSONResponse
 from src.framework.config import DEBUG
-from src.db.client.my_redis import GlobalLock, redis_client
+from src.db.client.local_mem import GlobalLock
 from src.db.query.auth import AuthMgr
 from src.framework.error import ErrorWithPrompt
 from src.operation import data_io
@@ -282,7 +282,7 @@ async def save(request: CustomRequest):
     save_range = request.body.get("range")
 
     lock_key = f"LK:save:{request.email}:{utils.calc_md5(file)}"
-    async with GlobalLock(redis_client, name=lock_key, lock_time=600) as lock:
+    async with GlobalLock(name=lock_key, lock_time=600) as lock:
         if not lock.locked:
             raise ErrorWithPrompt("访问频繁，请稍后再试")
 

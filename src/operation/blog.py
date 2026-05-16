@@ -15,8 +15,6 @@ from multiprocessing import Process
 from pydantic import BaseModel, validator
 from xpinyin import Pinyin
 from src import utils
-from src.db.client.my_redis import REDIS_URL, redis_client
-from src.framework.error import ErrorWithPrompt
 from src.framework.config import BLOG_ROOT, STORAGE_ROOT
 from src.operation import data_io
 
@@ -311,11 +309,7 @@ async def fresh_blog(email: str):
     BLOG_ROOT/{email_user}/{service}/version.txt  此文件夹下的文件名代表刷新 blog 时的时间戳
     BLOG_ROOT/{email_user}/{service}/index.html  此文件夹下
     """
-    if REDIS_URL:
-        uni_key = f"genb:{email}"
-        lock = await redis_client.set_if_not_exists(uni_key, value="123", timeout="3600")
-        if not lock:
-            raise ErrorWithPrompt("Blog正在生成中，请稍后再试")
+    # todo lock
 
     async def async_wrapper():
         p = Process(target=gen_wrapper, args=(email, ))
@@ -326,7 +320,6 @@ async def fresh_blog(email: str):
         while p.is_alive():
             await asyncio.sleep(3)
 
-        if REDIS_URL:
-            await redis_client.delete(uni_key)
+        # todo: unlock
 
     asyncio.create_task(async_wrapper())

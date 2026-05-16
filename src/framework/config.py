@@ -16,11 +16,6 @@ else:
         LOG_FILE = "/var/log/notebook_app.log"
 print(f"APP log will be written to this file: {LOG_FILE}")
 
-# "redis://:{password}@{host}:{port}/{db}"
-REDIS_URL = os.environ.get("REDIS_URL")
-if not REDIS_URL:
-    print("No REDIS_URL configured, global lock will not be used.")
-
 STORAGE_ROOT = os.environ.get("STORAGE_ROOT")
 if not STORAGE_ROOT:
     STORAGE_ROOT = str(Path.home() / "notebook_storage_root")

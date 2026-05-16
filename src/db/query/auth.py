@@ -1,7 +1,7 @@
 import hashlib
 from typing import *
 from pydantic import BaseModel
-from src.db.client.my_redis import redis_client, GlobalLock
+from src.db.client.local_mem import GlobalLock
 from src.framework.error import ErrorWithPrompt
 from src.operation import data_io
 from src import utils
@@ -35,7 +35,7 @@ class AuthMgr:
 
     @classmethod
     async def register(cls, email: str, password: str) -> str:
-        async with GlobalLock(redis=redis_client, name=f"login:{email}", try_times=1) as lock:
+        async with GlobalLock(name=f"login:{email}", try_times=1) as lock:
             if not lock.locked:
                 raise ErrorWithPrompt("操作频繁，请稍后再试")
 
@@ -51,7 +51,7 @@ class AuthMgr:
 
     @classmethod
     async def login(cls, email: str, password: str) -> str:
-        async with GlobalLock(redis=redis_client, name=f"login:{email}", try_times=1) as lock:
+        async with GlobalLock(name=f"login:{email}", try_times=1) as lock:
             if not lock.locked:
                 raise ErrorWithPrompt("登录频繁，请稍后再试")
             existed_encrypted = await data_io.get_encrypted_password(email)
@@ -69,7 +69,7 @@ class AuthMgr:
 
     @classmethod
     async def change_password(cls, email, old_password, new_password) -> None:
-        async with GlobalLock(redis=redis_client, name=f"login:{email}", try_times=1) as lock:
+        async with GlobalLock(name=f"login:{email}", try_times=1) as lock:
             if not lock.locked:
                 raise ErrorWithPrompt("操作频繁，请稍后再试")
 

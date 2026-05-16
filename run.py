@@ -4,7 +4,6 @@ import uvicorn
 import logging
 from src.framework.config import DEBUG, LOG_FILE
 
-os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s]: %(message)s",
